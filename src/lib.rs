@@ -8,8 +8,9 @@ pub mod plugin;
 pub use factory::*;
 pub use plugin::*;
 
-pub use vst3_sys::base::FactoryFlags;
-pub use vst3_sys::vst::kDefaultFactoryFlags;
+pub use vst3_com::sys::*;
+pub use vst3_sys::base::*;
+pub use vst3_sys::vst::*;
 
 #[macro_export]
 macro_rules! factory_main {
@@ -64,7 +65,7 @@ macro_rules! factory_main {
 
 pub fn create_factory<T: Factory + Default>() -> *mut c_void {
     let f = T::new();
-    let f = Box::into_raw(Box::new(Box::new(f) as Box<dyn Factory>)) as *mut _;
+    let f = Box::into_raw(Box::new(f as Box<dyn Factory>)) as *mut _;
     let mut factory = PluginFactory::new();
     factory.set_factory(f);
     Box::into_raw(factory) as *mut c_void
