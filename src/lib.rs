@@ -1,16 +1,41 @@
-extern crate log;
+use std::os::raw::{c_char, c_short, c_void};
 
-use std::os::raw::c_void;
-
+pub mod component;
 pub mod factory;
-pub mod plugin;
 
+pub use component::*;
 pub use factory::*;
-pub use plugin::*;
 
 pub use vst3_com::sys::*;
 pub use vst3_sys::base::*;
 pub use vst3_sys::vst::*;
+
+use std::ptr::copy_nonoverlapping;
+use widestring::U16CString;
+
+pub type UID = [u32; 4];
+
+pub(crate) unsafe fn strcpy(src: &str, dst: *mut c_char) {
+    copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
+}
+
+pub(crate) unsafe fn wstrcpy(src: &str, dst: *mut c_short) {
+    let src = U16CString::from_str(src).unwrap();
+    let mut src = src.into_vec();
+    src.push(0);
+    copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
+}
+
+pub fn guid(uid: UID) -> GUID {
+    let mut tuid: [u8; 16] = [0; 16];
+    for i in 0..4 {
+        let big_e = uid[i].to_be_bytes();
+        for k in 0..4 {
+            tuid[i * 4 + k] = unsafe { std::mem::transmute(big_e[k]) };
+        }
+    }
+    GUID { data: tuid }
+}
 
 #[macro_export]
 macro_rules! factory_main {
@@ -64,8 +89,7 @@ macro_rules! factory_main {
 }
 
 pub fn create_factory<T: Factory + Default>() -> *mut c_void {
-    let f = T::new();
-    let f = Box::into_raw(Box::new(f as Box<dyn Factory>)) as *mut _;
+    let f = Box::into_raw(Box::new(T::new() as Box<dyn Factory>)) as *mut _;
     let mut factory = PluginFactory::new();
     factory.set_factory(f);
     Box::into_raw(factory) as *mut c_void

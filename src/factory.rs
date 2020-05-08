@@ -1,8 +1,10 @@
 extern crate log;
 extern crate vst3_sys;
 
-use std::os::raw::{c_char, c_void};
-use std::ptr::{copy_nonoverlapping, null_mut};
+use log::*;
+
+use std::os::raw::c_void;
+use std::ptr::null_mut;
 
 use self::vst3_sys::vst::kDefaultFactoryFlags;
 use vst3_sys::base::{
@@ -12,11 +14,8 @@ use vst3_sys::base::{
 use vst3_sys::IID;
 use vst3_sys::VST3;
 
-use crate::{Component, PluginComponent};
-
-unsafe fn strcpy(src: &str, dst: *mut c_char) {
-    copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
-}
+use self::vst3_sys::base::kNotImplemented;
+use crate::{strcpy, wstrcpy, Plugin, PluginComponent};
 
 pub struct FactoryInfo {
     pub vendor: String,
@@ -42,10 +41,10 @@ pub trait Factory {
         }
     }
 
-    fn get_components(&self) -> &Vec<Box<dyn Component>>;
+    fn get_plugins(&self) -> &Vec<Box<dyn Plugin>>;
 }
 
-#[VST3(implements(IPluginFactory3, IPluginFactory2, IPluginFactory))]
+#[VST3(implements(IPluginFactory, IPluginFactory2, IPluginFactory3))]
 pub struct PluginFactory {
     factory: *mut c_void,
 }
@@ -69,32 +68,189 @@ impl PluginFactory {
 }
 
 impl IPluginFactory3 for PluginFactory {
-    unsafe fn get_class_info_unicode(&self, _idx: i32, _info: *mut PClassInfoW) -> tresult {
-        kResultFalse
+    unsafe fn get_class_info_unicode(&self, index: i32, info: *mut PClassInfoW) -> tresult {
+        if index as usize >= self.get_factory().get_plugins().len() {
+            return kResultFalse;
+        }
+
+        let plugins = self.get_factory().get_plugins();
+        let plugin = plugins.get(index as usize).unwrap();
+        let plugin_info = plugin.info();
+
+        let len_src = plugin_info.category.len();
+        let len_dest = (*info).category.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `category` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.name.len();
+        let len_dest = (*info).name.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `name` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.subcategories.len();
+        let len_dest = (*info).subcategories.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `subcategories` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.vendor.len();
+        let len_dest = (*info).vendor.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `vendor` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.version.len();
+        let len_dest = (*info).version.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `version` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.sdk_version.len();
+        let len_dest = (*info).sdk_version.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `version` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let info = &mut *info;
+        info.cid = plugin_info.cid;
+        info.cardinality = plugin_info.cardinality;
+        strcpy(&plugin_info.category, info.category.as_mut_ptr());
+        wstrcpy(&plugin_info.name, info.name.as_mut_ptr());
+        info.class_flags = plugin_info.class_flags;
+        strcpy(&plugin_info.subcategories, info.subcategories.as_mut_ptr());
+        wstrcpy(&plugin_info.vendor, info.vendor.as_mut_ptr());
+        wstrcpy(&plugin_info.version, info.version.as_mut_ptr());
+        wstrcpy(&plugin_info.sdk_version, info.sdk_version.as_mut_ptr());
+
+        kResultOk
     }
 
     unsafe fn set_host_context(&self, _context: *mut c_void) -> tresult {
-        kResultFalse
+        kNotImplemented
     }
 }
 
 impl IPluginFactory2 for PluginFactory {
-    unsafe fn get_class_info2(&self, _index: i32, _info: *mut PClassInfo2) -> tresult {
-        kResultFalse
+    unsafe fn get_class_info2(&self, index: i32, info: *mut PClassInfo2) -> tresult {
+        if index as usize >= self.get_factory().get_plugins().len() {
+            return kResultFalse;
+        }
+
+        let plugins = self.get_factory().get_plugins();
+        let plugin = plugins.get(index as usize).unwrap();
+        let plugin_info = plugin.info();
+
+        let len_src = plugin_info.category.len();
+        let len_dest = (*info).category.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `category` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.name.len();
+        let len_dest = (*info).name.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `name` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.subcategories.len();
+        let len_dest = (*info).subcategories.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `subcategories` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.vendor.len();
+        let len_dest = (*info).vendor.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `vendor` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.version.len();
+        let len_dest = (*info).version.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `version` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let len_src = plugin_info.sdk_version.len();
+        let len_dest = (*info).sdk_version.len();
+        if len_src > len_dest {
+            error!(
+                "PluginComponent's `version` field is too long! {} > {}",
+                len_src, len_dest
+            );
+            return kResultFalse;
+        }
+
+        let info = &mut *info;
+        info.cid = plugin_info.cid;
+        info.cardinality = plugin_info.cardinality;
+        strcpy(&plugin_info.category, info.category.as_mut_ptr());
+        strcpy(&plugin_info.name, info.name.as_mut_ptr());
+        info.class_flags = plugin_info.class_flags;
+        strcpy(&plugin_info.subcategories, info.subcategories.as_mut_ptr());
+        strcpy(&plugin_info.vendor, info.vendor.as_mut_ptr());
+        strcpy(&plugin_info.version, info.version.as_mut_ptr());
+        strcpy(&plugin_info.sdk_version, info.sdk_version.as_mut_ptr());
+
+        kResultOk
     }
 }
 
 impl IPluginFactory for PluginFactory {
     unsafe fn get_factory_info(&self, info: *mut PFactoryInfo) -> tresult {
-        let factory_info = &self.get_factory().info();
+        let factory_info = self.get_factory().info();
 
         let len_src = factory_info.vendor.len();
         let len_dest = (*info).vendor.len();
         if len_src > len_dest {
-            log::error!(
+            error!(
                 "PluginFactory's `vendor` field is too long! {} > {}",
-                len_src,
-                len_dest
+                len_src, len_dest
             );
             return kResultFalse;
         }
@@ -102,10 +258,9 @@ impl IPluginFactory for PluginFactory {
         let len_src = factory_info.url.len();
         let len_dest = (*info).url.len();
         if len_src > len_dest {
-            log::error!(
+            error!(
                 "PluginFactory's `url` field is too long! {} > {}",
-                len_src,
-                len_dest
+                len_src, len_dest
             );
             return kResultFalse;
         }
@@ -113,10 +268,9 @@ impl IPluginFactory for PluginFactory {
         let len_src = factory_info.email.len();
         let len_dest = (*info).email.len();
         if len_src > len_dest {
-            log::error!(
+            error!(
                 "PluginFactory's `email` field is too long! {} > {}",
-                len_src,
-                len_dest
+                len_src, len_dest
             );
             return kResultFalse;
         }
@@ -131,61 +285,63 @@ impl IPluginFactory for PluginFactory {
     }
 
     unsafe fn count_classes(&self) -> i32 {
-        self.get_factory().get_components().len() as i32
+        self.get_factory().get_plugins().len() as i32
     }
 
     unsafe fn get_class_info(&self, index: i32, info: *mut PClassInfo) -> tresult {
-        if index > self.get_factory().get_components().len() as i32 - 1 {
+        if index as usize >= self.get_factory().get_plugins().len() {
             return kResultFalse;
         }
-        let components = self.get_factory().get_components();
-        let component = components.get(index as usize).unwrap();
-        let component_info = component.info();
 
-        let len_src = component_info.category.len();
+        let plugins = self.get_factory().get_plugins();
+        let plugin = plugins.get(index as usize).unwrap();
+        let plugin_info = plugin.info();
+
+        let len_src = plugin_info.category.len();
         let len_dest = (*info).category.len();
         if len_src > len_dest {
-            log::error!(
+            error!(
                 "PluginComponent's `category` field is too long! {} > {}",
-                len_src,
-                len_dest
+                len_src, len_dest
             );
             return kResultFalse;
         }
 
-        let len_src = component_info.name.len();
+        let len_src = plugin_info.name.len();
         let len_dest = (*info).name.len();
         if len_src > len_dest {
-            log::error!(
+            error!(
                 "PluginComponent's `name` field is too long! {} > {}",
-                len_src,
-                len_dest
+                len_src, len_dest
             );
             return kResultFalse;
         }
 
         let info = &mut *info;
-        info.cid = component_info.cid;
-        info.cardinality = component_info.cardinality;
-        strcpy(&component_info.category, info.category.as_mut_ptr());
-        strcpy(&component_info.name, info.name.as_mut_ptr());
+        info.cid = plugin_info.cid;
+        info.cardinality = plugin_info.cardinality;
+        strcpy(&plugin_info.category, info.category.as_mut_ptr());
+        strcpy(&plugin_info.name, info.name.as_mut_ptr());
 
         kResultOk
     }
 
     unsafe fn create_instance(
         &self,
-        _cid: *mut IID,
+        cid: *mut IID,
         _iid: *mut IID,
         obj: *mut *mut c_void,
     ) -> tresult {
-        /// todo: Make it match
-        let cs = self.get_factory().get_components();
-        let c = cs.get(0).unwrap();
-        let c = Box::into_raw(Box::new(c)) as *mut _;
-        let mut component = PluginComponent::new();
-        component.set_component(c);
-        *obj = Box::into_raw(component) as *mut c_void;
-        kResultOk
+        let plugins = self.get_factory().get_plugins();
+        for p in plugins {
+            if *cid == p.info().cid {
+                let p = Box::into_raw(Box::new(p)) as *mut _;
+                let mut component = PluginComponent::new();
+                component.set_component(p);
+                *obj = Box::into_raw(component) as *mut c_void;
+                return kResultOk;
+            }
+        }
+        kResultFalse
     }
 }
