@@ -2,7 +2,7 @@
 extern crate vst3;
 
 use vst3::ClassCardinality::kManyInstances;
-use vst3::{guid, kDefaultFactoryFlags, Plugin, PluginInfo, UID};
+use vst3::{kDefaultFactoryFlags, Plugin, PluginInfo, UID};
 use vst3::{Factory, FactoryInfo};
 
 struct AGain {}
@@ -19,7 +19,7 @@ impl Default for AGain {
 impl Plugin for AGain {
     fn info(&self) -> PluginInfo {
         PluginInfo {
-            cid: guid(AGain::UID),
+            cid: Self::UID,
             cardinality: kManyInstances as i32,
             category: "Audio Module Class".to_string(),
             name: "AGain VST3".to_string(),

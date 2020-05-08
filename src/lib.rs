@@ -15,23 +15,25 @@ use widestring::U16CString;
 
 pub type UID = [u32; 4];
 
-pub(crate) unsafe fn strcpy(src: &str, dst: *mut c_char) {
+/// If the source &str is too long, it gets truncated to fit into the destination
+unsafe fn strcpy(src: &str, dst: *mut c_char) {
     copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
 }
 
-pub(crate) unsafe fn wstrcpy(src: &str, dst: *mut c_short) {
+/// If the source &str is too long, it gets truncated to fit into the destination
+unsafe fn wstrcpy(src: &str, dst: *mut c_short) {
     let src = U16CString::from_str(src).unwrap();
     let mut src = src.into_vec();
     src.push(0);
     copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
 }
 
-pub fn guid(uid: UID) -> GUID {
+fn guid(uid: UID) -> GUID {
     let mut tuid: [u8; 16] = [0; 16];
     for i in 0..4 {
         let big_e = uid[i].to_be_bytes();
         for k in 0..4 {
-            tuid[i * 4 + k] = unsafe { std::mem::transmute(big_e[k]) };
+            tuid[i * 4 + k] = big_e[k];
         }
     }
     GUID { data: tuid }

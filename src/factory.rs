@@ -1,8 +1,6 @@
 extern crate log;
 extern crate vst3_sys;
 
-use log::*;
-
 use std::os::raw::c_void;
 use std::ptr::null_mut;
 
@@ -15,7 +13,7 @@ use vst3_sys::IID;
 use vst3_sys::VST3;
 
 use self::vst3_sys::base::kNotImplemented;
-use crate::{strcpy, wstrcpy, Plugin, PluginComponent};
+use crate::{guid, strcpy, wstrcpy, Plugin, PluginComponent};
 
 pub struct FactoryInfo {
     pub vendor: String,
@@ -45,7 +43,7 @@ pub trait Factory {
 }
 
 #[VST3(implements(IPluginFactory, IPluginFactory2, IPluginFactory3))]
-pub struct PluginFactory {
+pub(crate) struct PluginFactory {
     factory: *mut c_void,
 }
 impl PluginFactory {
@@ -58,11 +56,13 @@ impl PluginFactory {
         self.factory = factory;
     }
 
-    pub unsafe fn get_factory(&self) -> &Box<dyn Factory> {
+    #[allow(clippy::borrowed_box)]
+    unsafe fn get_factory(&self) -> &Box<dyn Factory> {
         &*(self.factory as *mut Box<dyn Factory>)
     }
 
-    pub unsafe fn get_factory_mut(&mut self) -> &mut Box<dyn Factory> {
+    #[allow(clippy::borrowed_box)]
+    unsafe fn get_factory_mut(&mut self) -> &mut Box<dyn Factory> {
         &mut *(self.factory as *mut Box<dyn Factory>)
     }
 }
@@ -77,68 +77,8 @@ impl IPluginFactory3 for PluginFactory {
         let plugin = plugins.get(index as usize).unwrap();
         let plugin_info = plugin.info();
 
-        let len_src = plugin_info.category.len();
-        let len_dest = (*info).category.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `category` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.name.len();
-        let len_dest = (*info).name.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `name` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.subcategories.len();
-        let len_dest = (*info).subcategories.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `subcategories` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.vendor.len();
-        let len_dest = (*info).vendor.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `vendor` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.version.len();
-        let len_dest = (*info).version.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `version` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.sdk_version.len();
-        let len_dest = (*info).sdk_version.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `version` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
         let info = &mut *info;
-        info.cid = plugin_info.cid;
+        info.cid = guid(plugin_info.cid);
         info.cardinality = plugin_info.cardinality;
         strcpy(&plugin_info.category, info.category.as_mut_ptr());
         wstrcpy(&plugin_info.name, info.name.as_mut_ptr());
@@ -166,68 +106,8 @@ impl IPluginFactory2 for PluginFactory {
         let plugin = plugins.get(index as usize).unwrap();
         let plugin_info = plugin.info();
 
-        let len_src = plugin_info.category.len();
-        let len_dest = (*info).category.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `category` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.name.len();
-        let len_dest = (*info).name.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `name` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.subcategories.len();
-        let len_dest = (*info).subcategories.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `subcategories` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.vendor.len();
-        let len_dest = (*info).vendor.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `vendor` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.version.len();
-        let len_dest = (*info).version.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `version` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.sdk_version.len();
-        let len_dest = (*info).sdk_version.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `version` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
         let info = &mut *info;
-        info.cid = plugin_info.cid;
+        info.cid = guid(plugin_info.cid);
         info.cardinality = plugin_info.cardinality;
         strcpy(&plugin_info.category, info.category.as_mut_ptr());
         strcpy(&plugin_info.name, info.name.as_mut_ptr());
@@ -244,36 +124,6 @@ impl IPluginFactory2 for PluginFactory {
 impl IPluginFactory for PluginFactory {
     unsafe fn get_factory_info(&self, info: *mut PFactoryInfo) -> tresult {
         let factory_info = self.get_factory().info();
-
-        let len_src = factory_info.vendor.len();
-        let len_dest = (*info).vendor.len();
-        if len_src > len_dest {
-            error!(
-                "PluginFactory's `vendor` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = factory_info.url.len();
-        let len_dest = (*info).url.len();
-        if len_src > len_dest {
-            error!(
-                "PluginFactory's `url` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = factory_info.email.len();
-        let len_dest = (*info).email.len();
-        if len_src > len_dest {
-            error!(
-                "PluginFactory's `email` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
 
         let info = &mut *info;
         strcpy(&factory_info.vendor, info.vendor.as_mut_ptr());
@@ -297,28 +147,8 @@ impl IPluginFactory for PluginFactory {
         let plugin = plugins.get(index as usize).unwrap();
         let plugin_info = plugin.info();
 
-        let len_src = plugin_info.category.len();
-        let len_dest = (*info).category.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `category` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
-        let len_src = plugin_info.name.len();
-        let len_dest = (*info).name.len();
-        if len_src > len_dest {
-            error!(
-                "PluginComponent's `name` field is too long! {} > {}",
-                len_src, len_dest
-            );
-            return kResultFalse;
-        }
-
         let info = &mut *info;
-        info.cid = plugin_info.cid;
+        info.cid = guid(plugin_info.cid);
         info.cardinality = plugin_info.cardinality;
         strcpy(&plugin_info.category, info.category.as_mut_ptr());
         strcpy(&plugin_info.name, info.name.as_mut_ptr());
@@ -334,7 +164,7 @@ impl IPluginFactory for PluginFactory {
     ) -> tresult {
         let plugins = self.get_factory().get_plugins();
         for p in plugins {
-            if *cid == p.info().cid {
+            if *cid == guid(p.info().cid) {
                 let p = Box::into_raw(Box::new(p)) as *mut _;
                 let mut component = PluginComponent::new();
                 component.set_component(p);
