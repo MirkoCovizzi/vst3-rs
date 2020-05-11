@@ -1,5 +1,5 @@
 use crate::PluginResult::{ResultFalse, ResultOk};
-use crate::{strcpy, wstrcpy, AtomicFloat, Parameter, PluginResult};
+use crate::{strcpy, wstrcpy, Parameter, PluginResult};
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -117,7 +117,7 @@ impl Parameters {
     pub(crate) fn get_param_normalized(&self, id: ParamKey) -> Option<f64> {
         if let Some(param) = self.controller_params.borrow().get(&id) {
             let get_param_normalized = param.get_param_normalized;
-            return Some(get_param_normalized(param.value_normalized.get()));
+            return Some(get_param_normalized(param.value_normalized));
         }
         None
     }
@@ -125,7 +125,7 @@ impl Parameters {
     pub(crate) fn set_param_normalized(&self, id: ParamKey, value: f64) -> PluginResult {
         if let Some(param) = &mut self.controller_params.borrow_mut().get_mut(&id) {
             let set_param_normalized = param.set_param_normalized;
-            param.value_normalized.set(set_param_normalized(value));
+            param.value_normalized = set_param_normalized(value);
             return ResultOk;
         }
         ResultFalse

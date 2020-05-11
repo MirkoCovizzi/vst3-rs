@@ -1,4 +1,3 @@
-use crate::AtomicFloat;
 use std::fmt::{Display, Formatter};
 use std::num::ParseFloatError;
 use vst3_sys::vst::ParameterFlags::{kCanAutomate, kIsBypass};
@@ -17,7 +16,7 @@ pub(crate) struct ParamInfo {
 
 pub struct Parameter {
     pub(crate) info: ParamInfo,
-    pub(crate) value_normalized: AtomicFloat,
+    pub(crate) value_normalized: f64,
     pub(crate) get_param_string_by_value: fn(f64) -> String,
     pub(crate) get_param_value_by_string: fn(String) -> Result<f64, ParseFloatError>,
     pub(crate) normalized_param_to_plain: fn(f64) -> f64,
@@ -159,7 +158,7 @@ impl ParameterBuilder {
         };
         Parameter {
             info: param_info,
-            value_normalized: AtomicFloat::new(self.default_normalized_value),
+            value_normalized: self.default_normalized_value,
             get_param_string_by_value: self.get_param_string_by_value,
             get_param_value_by_string: self.get_param_value_by_string,
             normalized_param_to_plain: self.normalized_param_to_plain,

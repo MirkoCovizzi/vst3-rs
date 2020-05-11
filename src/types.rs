@@ -1,4 +1,4 @@
-use crate::{AudioBusBuffer, EventList};
+use crate::EventList;
 use num_traits::Float;
 use std::ffi::CStr;
 use std::fmt::{Debug, Formatter};

@@ -1,6 +1,5 @@
 use std::os::raw::{c_char, c_short, c_void};
 
-pub mod buffer;
 pub mod component;
 pub mod events;
 pub mod factory;
@@ -8,9 +7,7 @@ pub mod io;
 pub mod parameter;
 pub mod parameters;
 pub mod types;
-pub mod util;
 
-pub use buffer::*;
 pub use component::*;
 pub use events::*;
 pub use factory::*;
@@ -18,7 +15,6 @@ pub use io::*;
 pub use parameter::*;
 pub use parameters::*;
 pub use types::*;
-pub use util::*;
 
 use vst3_com::sys::*;
 use vst3_sys::base::*;
@@ -45,6 +41,7 @@ pub enum PluginSpeakerArrangement {
     Stereo = kStereo as isize,
 }
 
+/// todo: redesign these!
 pub enum PluginBusType {
     Main = kMain as isize,
     Aux = kAux as isize,

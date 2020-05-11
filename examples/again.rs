@@ -1,8 +1,10 @@
 #[macro_use]
 use std::panic;
 
+use log::*;
 use flexi_logger::{opt_format, Logger};
 
+use vst3::plugin_main;
 use vst3::PluginSpeakerArrangement::Stereo;
 use vst3::{
     AudioBusBuilder, Category, EventBusBuilder, EventType, FxSubcategory, Info, InfoBuilder,
