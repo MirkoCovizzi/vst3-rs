@@ -1,19 +1,68 @@
 use std::os::raw::{c_char, c_short, c_void};
 
+pub mod buffer;
 pub mod component;
+pub mod events;
 pub mod factory;
+pub mod io;
+pub mod parameter;
+pub mod parameters;
+pub mod types;
+pub mod util;
 
+pub use buffer::*;
 pub use component::*;
+pub use events::*;
 pub use factory::*;
+pub use io::*;
+pub use parameter::*;
+pub use parameters::*;
+pub use types::*;
+pub use util::*;
 
-pub use vst3_com::sys::*;
-pub use vst3_sys::base::*;
-pub use vst3_sys::vst::*;
+use vst3_com::sys::*;
+use vst3_sys::base::*;
+use vst3_sys::vst::*;
 
+use std::ffi::CStr;
 use std::ptr::copy_nonoverlapping;
+use vst3_sys::base::ClassCardinality::kManyInstances;
+use vst3_sys::base::FactoryFlags::*;
+use vst3_sys::vst::BusFlags::kDefaultActive;
+use vst3_sys::vst::BusTypes::{kAux, kMain};
+use vst3_sys::vst::ParameterFlags::kCanAutomate;
 use widestring::U16CString;
 
-pub type UID = [u32; 4];
+pub enum PluginSpeaker {
+    L,
+    R,
+}
+
+/// todo: replace with the correct ones from vst3-sys!!!
+pub enum PluginSpeakerArrangement {
+    Empty = 0,
+    Mono = 524288,
+    Stereo = kStereo as isize,
+}
+
+pub enum PluginBusType {
+    Main = kMain as isize,
+    Aux = kAux as isize,
+}
+
+pub enum PluginBusFlag {
+    DefaultActive = kDefaultActive as isize,
+}
+
+pub enum PluginBusDirection {
+    Input,
+    Output,
+}
+
+#[derive(Clone)]
+pub enum PluginClassCardinality {
+    ManyInstances = kManyInstances as isize,
+}
 
 /// If the source &str is too long, it gets truncated to fit into the destination
 unsafe fn strcpy(src: &str, dst: *mut c_char) {
@@ -28,15 +77,43 @@ unsafe fn wstrcpy(src: &str, dst: *mut c_short) {
     copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
 }
 
-fn guid(uid: UID) -> GUID {
-    let mut tuid: [u8; 16] = [0; 16];
-    for i in 0..4 {
-        let big_e = uid[i].to_be_bytes();
-        for k in 0..4 {
-            tuid[i * 4 + k] = big_e[k];
+#[macro_export]
+macro_rules! plugin_main {
+    (
+        vendor: $vendor:expr,
+        url: $url:expr,
+        email: $email:expr,
+        plugins: [$($plugin:ident), +]
+    ) => {
+        struct DefaultFactory {
+            plugins: std::vec::Vec<std::boxed::Box<dyn $crate::Plugin>>,
         }
-    }
-    GUID { data: tuid }
+
+        impl std::default::Default for DefaultFactory {
+            fn default() -> Self {
+                DefaultFactory {
+                    plugins: std::vec![$($plugin::new()), *]
+                }
+            }
+        }
+
+        impl $crate::Factory for DefaultFactory {
+            fn get_info(&self) -> $crate::FactoryInfo {
+                $crate::FactoryInfo {
+                    vendor: $vendor.to_string(),
+                    url: $url.to_string(),
+                    email: $email.to_string(),
+                    flags: vst3_sys::vst::kDefaultFactoryFlags,
+                }
+            }
+
+            fn get_plugins(&self) -> &std::vec::Vec<std::boxed::Box<dyn $crate::Plugin>> {
+                &self.plugins
+            }
+        }
+
+        $crate::factory_main!(DefaultFactory);
+    };
 }
 
 #[macro_export]
@@ -57,7 +134,7 @@ macro_rules! factory_main {
         #[cfg(target_os = "linux")]
         #[no_mangle]
         #[allow(non_snake_case)]
-        pub extern "system" fn ModuleEntry(_: *mut c_void) -> bool {
+        pub extern "system" fn ModuleEntry(_: *mut std::os::raw::c_void) -> bool {
             true
         }
 
@@ -71,7 +148,7 @@ macro_rules! factory_main {
         #[cfg(target_os = "macos")]
         #[no_mangle]
         #[allow(non_snake_case)]
-        pub extern "system" fn bundleEntry(_: *mut c_void) -> bool {
+        pub extern "system" fn bundleEntry(_: *mut std::os::raw::c_void) -> bool {
             true
         }
 

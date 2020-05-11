@@ -13,7 +13,7 @@ use vst3_sys::IID;
 use vst3_sys::VST3;
 
 use self::vst3_sys::base::kNotImplemented;
-use crate::{guid, strcpy, wstrcpy, Plugin, PluginComponent};
+use crate::{strcpy, wstrcpy, Plugin, PluginComponent};
 
 pub struct FactoryInfo {
     pub vendor: String,
@@ -30,7 +30,7 @@ pub trait Factory {
         Box::new(Default::default())
     }
 
-    fn info(&self) -> FactoryInfo {
+    fn get_info(&self) -> FactoryInfo {
         FactoryInfo {
             vendor: "".to_string(),
             url: "".to_string(),
@@ -44,7 +44,7 @@ pub trait Factory {
 
 #[VST3(implements(IPluginFactory, IPluginFactory2, IPluginFactory3))]
 pub(crate) struct PluginFactory {
-    factory: *mut c_void,
+    inner: *mut c_void,
 }
 impl PluginFactory {
     pub(crate) fn new() -> Box<Self> {
@@ -53,17 +53,12 @@ impl PluginFactory {
     }
 
     pub(crate) fn set_factory(&mut self, factory: *mut c_void) {
-        self.factory = factory;
+        self.inner = factory;
     }
 
     #[allow(clippy::borrowed_box)]
     unsafe fn get_factory(&self) -> &Box<dyn Factory> {
-        &*(self.factory as *mut Box<dyn Factory>)
-    }
-
-    #[allow(clippy::borrowed_box)]
-    unsafe fn get_factory_mut(&mut self) -> &mut Box<dyn Factory> {
-        &mut *(self.factory as *mut Box<dyn Factory>)
+        &*(self.inner as *mut Box<dyn Factory>)
     }
 }
 
@@ -75,15 +70,21 @@ impl IPluginFactory3 for PluginFactory {
 
         let plugins = self.get_factory().get_plugins();
         let plugin = plugins.get(index as usize).unwrap();
-        let plugin_info = plugin.info();
+        let plugin_info = plugin.get_info();
 
         let info = &mut *info;
-        info.cid = guid(plugin_info.cid);
-        info.cardinality = plugin_info.cardinality;
-        strcpy(&plugin_info.category, info.category.as_mut_ptr());
+        info.cid = plugin_info.cid.to_guid();
+        info.cardinality = plugin_info.cardinality as i32;
+        strcpy(
+            &plugin_info.category.to_string(),
+            info.category.as_mut_ptr(),
+        );
         wstrcpy(&plugin_info.name, info.name.as_mut_ptr());
         info.class_flags = plugin_info.class_flags;
-        strcpy(&plugin_info.subcategories, info.subcategories.as_mut_ptr());
+        strcpy(
+            &plugin_info.subcategories.to_string(),
+            info.subcategories.as_mut_ptr(),
+        );
         wstrcpy(&plugin_info.vendor, info.vendor.as_mut_ptr());
         wstrcpy(&plugin_info.version, info.version.as_mut_ptr());
         wstrcpy(&plugin_info.sdk_version, info.sdk_version.as_mut_ptr());
@@ -104,15 +105,21 @@ impl IPluginFactory2 for PluginFactory {
 
         let plugins = self.get_factory().get_plugins();
         let plugin = plugins.get(index as usize).unwrap();
-        let plugin_info = plugin.info();
+        let plugin_info = plugin.get_info();
 
         let info = &mut *info;
-        info.cid = guid(plugin_info.cid);
-        info.cardinality = plugin_info.cardinality;
-        strcpy(&plugin_info.category, info.category.as_mut_ptr());
+        info.cid = plugin_info.cid.to_guid();
+        info.cardinality = plugin_info.cardinality as i32;
+        strcpy(
+            &plugin_info.category.to_string(),
+            info.category.as_mut_ptr(),
+        );
         strcpy(&plugin_info.name, info.name.as_mut_ptr());
         info.class_flags = plugin_info.class_flags;
-        strcpy(&plugin_info.subcategories, info.subcategories.as_mut_ptr());
+        strcpy(
+            &plugin_info.subcategories.to_string(),
+            info.subcategories.as_mut_ptr(),
+        );
         strcpy(&plugin_info.vendor, info.vendor.as_mut_ptr());
         strcpy(&plugin_info.version, info.version.as_mut_ptr());
         strcpy(&plugin_info.sdk_version, info.sdk_version.as_mut_ptr());
@@ -123,13 +130,13 @@ impl IPluginFactory2 for PluginFactory {
 
 impl IPluginFactory for PluginFactory {
     unsafe fn get_factory_info(&self, info: *mut PFactoryInfo) -> tresult {
-        let factory_info = self.get_factory().info();
+        let factory_info = self.get_factory().get_info();
 
         let info = &mut *info;
         strcpy(&factory_info.vendor, info.vendor.as_mut_ptr());
         strcpy(&factory_info.url, info.url.as_mut_ptr());
         strcpy(&factory_info.email, info.email.as_mut_ptr());
-        info.flags = factory_info.flags;
+        info.flags = factory_info.flags as i32;
 
         kResultOk
     }
@@ -145,12 +152,15 @@ impl IPluginFactory for PluginFactory {
 
         let plugins = self.get_factory().get_plugins();
         let plugin = plugins.get(index as usize).unwrap();
-        let plugin_info = plugin.info();
+        let plugin_info = plugin.get_info();
 
         let info = &mut *info;
-        info.cid = guid(plugin_info.cid);
-        info.cardinality = plugin_info.cardinality;
-        strcpy(&plugin_info.category, info.category.as_mut_ptr());
+        info.cid = plugin_info.cid.to_guid();
+        info.cardinality = plugin_info.cardinality as i32;
+        strcpy(
+            &plugin_info.category.to_string(),
+            info.category.as_mut_ptr(),
+        );
         strcpy(&plugin_info.name, info.name.as_mut_ptr());
 
         kResultOk
@@ -164,7 +174,7 @@ impl IPluginFactory for PluginFactory {
     ) -> tresult {
         let plugins = self.get_factory().get_plugins();
         for p in plugins {
-            if *cid == guid(p.info().cid) {
+            if *cid == p.get_info().cid.to_guid() {
                 let p = Box::into_raw(Box::new(p)) as *mut _;
                 let mut component = PluginComponent::new();
                 component.set_component(p);
