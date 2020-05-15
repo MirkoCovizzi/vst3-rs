@@ -1,5 +1,3 @@
-use crate::PluginResult::{ResultFalse, ResultOk};
-use crate::{Parameters, PluginResult};
 use vst3_sys::vst::EventTypes::*;
 use vst3_sys::vst::{
     ChordEvent, DataEvent, Event, EventData, EventTypes, IEventList, LegacyMidiCCOutEvent,
@@ -52,37 +50,8 @@ impl From<EventType> for u16 {
     }
 }
 
-use std::collections::HashMap;
-use std::sync::MutexGuard;
-
-pub struct Events {
-    events: RefCell<HashMap<u16, fn(Event, &Parameters) -> ()>>,
-}
-
-impl Events {
-    pub fn new() -> Self {
-        Self {
-            events: RefCell::new(HashMap::new()),
-        }
-    }
-
-    pub fn add_event(&self, event_type: EventType, event_action: fn(Event, &Parameters) -> ()) {
-        self.events
-            .borrow_mut()
-            .insert(event_type.into(), event_action);
-    }
-
-    pub(crate) fn call_event_action(&self, event: Event, params: &Parameters) -> PluginResult {
-        match self.events.borrow().get(&event.type_) {
-            Some(event_action) => {
-                event_action(event, params);
-                return ResultOk;
-            }
-            None => ResultFalse,
-        }
-    }
-}
-
+use crate::ResultOk::ResOk;
+use crate::{ResultErr, Unknown, UID};
 use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
 use std::os::raw::c_void;
@@ -93,23 +62,27 @@ pub struct EventList {
     inner: ComPtr<dyn IEventList>,
 }
 
-impl EventList {
-    pub fn from_raw(ptr: *mut c_void) -> Option<Self> {
+impl Unknown for EventList {
+    const IID: UID = UID::new([0x3A2C4214, 0x346349FE, 0xB2C4F397, 0xB9695A44]);
+
+    fn from_raw(ptr: *mut c_void) -> Option<Box<Self>> {
         if ptr.is_null() {
             return None;
         }
         let ptr = ptr as *mut *mut _;
         unsafe {
             let ptr: ComPtr<dyn IEventList> = ComPtr::new(ptr);
-            Some(Self { inner: ptr })
+            Some(Box::new(Self { inner: ptr }))
         }
     }
+}
 
+impl EventList {
     pub fn get_event_count(&self) -> i32 {
         unsafe { self.inner.get_event_count() }
     }
 
-    pub fn get_event(&self, index: i32) -> Option<Event> {
+    pub fn get_event(&self, index: i32) -> Result<Event, ResultErr> {
         let mut event: Event = Event {
             bus_index: 0,
             sample_offset: 0,
@@ -129,8 +102,8 @@ impl EventList {
         };
         unsafe {
             match self.inner.get_event(index, &mut event as *mut _) {
-                kResultTrue => Some(event),
-                _ => None,
+                r if r == ResOk.into() => Ok(event),
+                r => Err(ResultErr::from(r)),
             }
         }
     }

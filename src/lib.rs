@@ -1,68 +1,50 @@
-use std::os::raw::{c_char, c_short, c_void};
+mod audio_processor;
+mod basic_plugin;
+mod bus;
+mod common;
+mod component;
+mod edit_controller;
+mod events;
+mod factory;
+mod host_application;
+mod parameter_changes;
+mod parameters;
+mod plug_view;
+mod plugin_base;
+mod speaker;
+mod stream;
+mod unit;
+mod unit_info;
+mod unknown;
 
-pub mod component;
-pub mod events;
-pub mod factory;
-pub mod io;
-pub mod parameter;
-pub mod parameters;
-pub mod types;
-
+pub use audio_processor::*;
+pub use basic_plugin::*;
+pub use bus::*;
+pub use common::*;
 pub use component::*;
+pub use edit_controller::*;
 pub use events::*;
 pub use factory::*;
-pub use io::*;
-pub use parameter::*;
+pub use host_application::*;
+pub use parameter_changes::*;
 pub use parameters::*;
-pub use types::*;
+pub use plug_view::*;
+pub use plugin_base::*;
+pub use speaker::*;
+pub use stream::*;
+pub use unit::*;
+pub use unit_info::*;
+pub use unknown::*;
 
-use vst3_com::sys::*;
-use vst3_sys::base::*;
-use vst3_sys::vst::*;
-
-use std::ffi::CStr;
+use std::os::raw::{c_char, c_short, c_void};
 use std::ptr::copy_nonoverlapping;
-use vst3_sys::base::ClassCardinality::kManyInstances;
-use vst3_sys::base::FactoryFlags::*;
-use vst3_sys::vst::BusFlags::kDefaultActive;
-use vst3_sys::vst::BusTypes::{kAux, kMain};
-use vst3_sys::vst::ParameterFlags::kCanAutomate;
+
 use widestring::U16CString;
-
-pub enum PluginSpeaker {
-    L,
-    R,
-}
-
-/// todo: replace with the correct ones from vst3-sys!!!
-pub enum PluginSpeakerArrangement {
-    Empty = 0,
-    Mono = 524288,
-    Stereo = kStereo as isize,
-}
-
-/// todo: redesign these!
-pub enum PluginBusType {
-    Main = kMain as isize,
-    Aux = kAux as isize,
-}
-
-pub enum PluginBusFlag {
-    DefaultActive = kDefaultActive as isize,
-}
-
-pub enum PluginBusDirection {
-    Input,
-    Output,
-}
-
-#[derive(Clone)]
-pub enum PluginClassCardinality {
-    ManyInstances = kManyInstances as isize,
-}
 
 /// If the source &str is too long, it gets truncated to fit into the destination
 unsafe fn strcpy(src: &str, dst: *mut c_char) {
+    let mut src = src.to_string().into_bytes();
+    src.push(0);
     copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
 }
 
@@ -75,21 +57,68 @@ unsafe fn wstrcpy(src: &str, dst: *mut c_short) {
 }
 
 #[macro_export]
-macro_rules! plugin_main {
+macro_rules! basic_plugin {
     (
+        name: $name:expr,
         vendor: $vendor:expr,
-        url: $url:expr,
-        email: $email:expr,
         plugins: [$($plugin:ident), +]
     ) => {
         struct DefaultFactory {
-            plugins: std::vec::Vec<std::boxed::Box<dyn $crate::Plugin>>,
+            controllers: std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::PluginBase>>>,
+            components: std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::PluginBase>>>,
         }
 
         impl std::default::Default for DefaultFactory {
             fn default() -> Self {
                 DefaultFactory {
-                    plugins: std::vec![$($plugin::new()), *]
+                    controllers: std::vec![$(std::sync::Mutex::new($crate::BasicPluginEditController::new($plugin::new(), $plugin::UID, $name, $vendor))), *],
+                    components: std::vec![$(std::sync::Mutex::new($crate::BasicPluginComponent::new($plugin::new(), $plugin::UID, $name, $vendor))), *]
+                }
+            }
+        }
+
+        impl $crate::Factory for DefaultFactory {
+            fn get_info(&self) -> $crate::FactoryInfo {
+                $crate::FactoryInfo {
+                    vendor: $vendor.to_string(),
+                    url: "".to_string(),
+                    email: "".to_string(),
+                    flags: vst3_sys::vst::kDefaultFactoryFlags,
+                }
+            }
+
+            fn get_edit_controllers(&self) -> &std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::PluginBase>>> {
+                &self.controllers
+            }
+
+            fn get_components(&self) -> &std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::PluginBase>>> {
+                &self.components
+            }
+        }
+
+        $crate::factory_main!(DefaultFactory);
+    };
+}
+
+#[macro_export]
+macro_rules! plugin_main {
+    (
+        vendor: $vendor:expr,
+        url: $url:expr,
+        email: $email:expr,
+        edit_controllers: [$($edit_controller:ident), +],
+        components: [$($component:ident), +]
+    ) => {
+        struct DefaultFactory {
+            edit_controllers: std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::EditController>>>,
+            components: std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::Component>>>,
+        }
+
+        impl std::default::Default for DefaultFactory {
+            fn default() -> Self {
+                DefaultFactory {
+                    edit_controllers: std::vec![$(std::sync::Mutex::new($edit_controller::new())), *],
+                    components: std::vec![$(std::sync::Mutex::new($component::new())), *],
                 }
             }
         }
@@ -104,8 +133,12 @@ macro_rules! plugin_main {
                 }
             }
 
-            fn get_plugins(&self) -> &std::vec::Vec<std::boxed::Box<dyn $crate::Plugin>> {
-                &self.plugins
+            fn get_edit_controllers(&self) -> &std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::EditController>>> {
+                &self.edit_controllers
+            }
+
+            fn get_components(&self) -> &std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::Component>>> {
+                &self.components
             }
         }
 
@@ -166,7 +199,7 @@ macro_rules! factory_main {
 
 pub fn create_factory<T: Factory + Default>() -> *mut c_void {
     let f = Box::into_raw(Box::new(T::new() as Box<dyn Factory>)) as *mut _;
-    let mut factory = PluginFactory::new();
+    let mut factory = VST3PluginFactory::new();
     factory.set_factory(f);
     Box::into_raw(factory) as *mut c_void
 }

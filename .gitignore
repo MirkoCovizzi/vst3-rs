@@ -2,3 +2,5 @@
 Cargo.lock
 *.iml
 .idea
+/examples/again_simple.rs
+/examples/dimension_expander.rs
