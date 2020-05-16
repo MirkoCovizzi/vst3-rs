@@ -182,7 +182,7 @@ impl IPluginFactory for VST3PluginFactory {
                     edit_controller.set_plugin_base(object);
                     *obj = Box::into_raw(edit_controller) as *mut c_void;
                     ResOk.into()
-                } else if object.as_audio_processor().is_some() {
+                } else if object.as_component().is_some() {
                     let mut component = VST3Component::new();
                     component.set_plugin_base(object);
                     *obj = Box::into_raw(component) as *mut c_void;
