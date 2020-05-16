@@ -1,5 +1,7 @@
-use flexi_logger::{opt_format, Logger};
 use std::panic;
+
+use flexi_logger::{opt_format, Logger};
+
 use vst3::BusDirection::{Input, Output};
 use vst3::BusType::Main;
 use vst3::MediaType::{Audio, Event};
@@ -7,13 +9,17 @@ use vst3::ParameterFlag::{CanAutomate, IsBypass, IsReadOnly};
 use vst3::ResultErr::{InvalidArgument, NotImplemented, ResultFalse};
 use vst3::ResultOk::ResOk;
 use vst3::{
-    get_channel_count, plugin_main, AudioProcessor, BaseAudioBus, BaseEventBus, BaseParameter,
+    get_channel_count, factory_main, AudioProcessor, BaseAudioBus, BaseEventBus, BaseParameter,
     BusDirection, BusInfo, BusType, BusVec, Category, ClassInfo, ClassInfoBuilder, Component,
-    ComponentHandler, EditController, FxSubcategory, HostApplication, IoMode, MediaType, Parameter,
-    ParameterContainer, ParameterInfo, ParameterInfoBuilder, PlugView, PluginBase, ProcessData,
-    ProcessSetup, ResultErr, ResultOk, RoutingInfo, SeekMode, Stream, SymbolicSampleSize, Unit,
-    UnitBuilder, UnitInfo, NO_PROGRAM_LIST_ID, ROOT_UNIT_ID, STEREO, UID,
+    ComponentHandler, EditController, FactoryInfo, FxSubcategory, HostApplication, IoMode,
+    MediaType, Parameter, ParameterContainer, ParameterInfo, ParameterInfoBuilder, PlugView,
+    PluginBase, PluginFactory, ProcessData, ProcessSetup, ResultErr, ResultOk, RoutingInfo,
+    SeekMode, Stream, SymbolicSampleSize, Unit, UnitBuilder, UnitInfo, NO_PROGRAM_LIST_ID,
+    ROOT_UNIT_ID, STEREO, UID,
 };
+
+use vst3_com::IID;
+use std::any::Any;
 
 const GAIN_ID: u32 = 0;
 const VU_PPM: u32 = 1;
@@ -102,6 +108,11 @@ struct AGainEditController {
 
 impl AGainEditController {
     const UID: UID = UID::new([1, 2, 3, 4]);
+    const INFO: ClassInfo = ClassInfoBuilder::new(&Self::UID)
+        .name("AGain Rust Controller")
+        .vendor("rust.audio")
+        .category(&Category::ComponentController)
+        .build();
 }
 
 impl Default for AGainEditController {
@@ -116,17 +127,11 @@ impl Default for AGainEditController {
 }
 
 impl PluginBase for AGainEditController {
-    fn get_class_info(&self) -> ClassInfo {
-        ClassInfoBuilder::new(AGainEditController::UID)
-            .name("AGain Rust Controller")
-            .vendor("rust.audio")
-            .category(Category::ComponentController)
-            .build()
+    fn as_edit_controller(&mut self) -> Option<&mut dyn EditController> {
+        Some(self)
     }
 
     fn initialize(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr> {
-        log::info!("I'm fine!");
-
         if self.context.is_some() {
             return Err(ResultFalse);
         }
@@ -162,11 +167,12 @@ impl PluginBase for AGainEditController {
         let bypass_param = BaseParameter::new(bypass_param_info);
         self.parameters.add_parameter(bypass_param);
 
-        log::info!("I'm fine!");
         Ok(ResOk)
     }
 
     fn terminate(&mut self) -> Result<ResultOk, ResultErr> {
+        self.parameters.remove_all();
+
         self.context = None;
 
         Ok(ResOk)
@@ -280,6 +286,12 @@ struct AGainComponent {
 
 impl AGainComponent {
     const UID: UID = UID::new([5, 6, 7, 8]);
+    const INFO: ClassInfo = ClassInfoBuilder::new(&Self::UID)
+        .name("AGain Rust")
+        .vendor("rust.audio")
+        .category(&Category::AudioEffect)
+        .subcategories(&FxSubcategory::Fx)
+        .build();
 
     fn add_audio_input(&mut self, name: &str, arr: u64, bus_type: BusType, flags: i32) {
         let new_bus = BaseAudioBus::new(name, bus_type, flags, arr);
@@ -348,13 +360,12 @@ impl Default for AGainComponent {
 }
 
 impl PluginBase for AGainComponent {
-    fn get_class_info(&self) -> ClassInfo {
-        ClassInfoBuilder::new(AGainComponent::UID)
-            .name("AGain Rust")
-            .vendor("rust.audio")
-            .category(Category::AudioEffect)
-            .subcategories(FxSubcategory::Fx)
-            .build()
+    fn as_component(&mut self) -> Option<&mut dyn Component> {
+        Some(self)
+    }
+
+    fn as_audio_processor(&mut self) -> Option<&mut dyn AudioProcessor> {
+        Some(self)
     }
 
     fn initialize(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr> {
@@ -404,10 +415,6 @@ impl PluginBase for AGainComponent {
 }
 
 impl Component for AGainComponent {
-    fn as_audio_processor(&mut self) -> Option<&mut dyn AudioProcessor> {
-        Some(self)
-    }
-
     fn get_controller_class_id(&self) -> Result<UID, ResultErr> {
         Ok(AGainEditController::UID)
     }
@@ -626,10 +633,70 @@ impl AudioProcessor for AGainComponent {
     }
 }
 
-plugin_main!(
-    vendor: "rust.audio",
-    url: "https://rust.audio",
-    email: "mailto://rust@audio.com",
-    edit_controllers: [AGainEditController],
-    components: [AGainComponent]
-);
+struct AGainFactory {
+    classes: Vec<(ClassInfo, fn() -> Box<dyn PluginBase>)>,
+    context: Option<HostApplication>,
+}
+
+impl AGainFactory {
+    const INFO: FactoryInfo = FactoryInfo {
+        vendor: "rust.audio",
+        url: "https://rust.audio",
+        email: "rust@audio.com",
+        flags: 16,
+    };
+}
+
+impl Default for AGainFactory {
+    fn default() -> Self {
+        Self {
+            classes: vec![
+                (AGainEditController::INFO, AGainEditController::new),
+                (AGainComponent::INFO, AGainComponent::new),
+            ],
+            context: None,
+        }
+    }
+}
+
+impl PluginFactory for AGainFactory {
+    fn get_factory_info(&self) -> Result<&FactoryInfo, ResultErr> {
+        Ok(&Self::INFO)
+    }
+
+    fn count_classes(&self) -> Result<u32, ResultErr> {
+        Ok(self.classes.len() as u32)
+    }
+
+    fn get_class_info(&self, index: u32) -> Result<&ClassInfo, ResultErr> {
+        if index as usize >= self.classes.len() {
+            return Err(InvalidArgument)
+        }
+
+        Ok(&self.classes[index as usize].0)
+    }
+
+    // todo: convert should use UID instead of IID
+    fn create_instance(&self, cid: *const IID) -> Result<Box<dyn PluginBase>, ResultErr> {
+        for c in &self.classes {
+            unsafe {
+                if *cid == c.0.get_cid().to_guid() {
+                    return Ok(c.1());
+                }
+            }
+        }
+        Err(ResultFalse)
+    }
+
+    fn set_host_context(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr> {
+        if self.context.is_some() {
+            return Err(ResultFalse);
+        }
+
+        self.context = Some(context);
+
+        Ok(ResOk)
+    }
+}
+
+factory_main!(AGainFactory);

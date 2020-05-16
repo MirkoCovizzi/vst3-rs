@@ -146,10 +146,6 @@ impl From<RoutingInfo> for vst3_sys::vst::RoutingInfo {
 }
 
 pub trait Component: PluginBase {
-    fn as_audio_processor(&mut self) -> Option<&mut dyn AudioProcessor> {
-        None
-    }
-
     fn get_controller_class_id(&self) -> Result<UID, ResultErr>;
     fn set_io_mode(&self, mode: IoMode) -> Result<ResultOk, ResultErr>;
     fn get_bus_count(&self, type_: &MediaType, dir: &BusDirection) -> Result<i32, ResultErr>;
@@ -172,30 +168,96 @@ pub trait Component: PluginBase {
     fn get_state(&self, state: Stream) -> Result<ResultOk, ResultErr>;
 }
 
+struct DummyComponent {}
+
+impl Default for DummyComponent {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
+impl PluginBase for DummyComponent {
+    fn initialize(&mut self, _context: HostApplication) -> Result<ResultOk, ResultErr> {
+        unimplemented!()
+    }
+
+    fn terminate(&mut self) -> Result<ResultOk, ResultErr> {
+        unimplemented!()
+    }
+}
+
+impl Component for DummyComponent {
+    fn get_controller_class_id(&self) -> Result<UID, ResultErr> {
+        unimplemented!()
+    }
+
+    fn set_io_mode(&self, _mode: IoMode) -> Result<ResultOk, ResultErr> {
+        unimplemented!()
+    }
+
+    fn get_bus_count(&self, _type_: &MediaType, _dir: &BusDirection) -> Result<i32, ResultErr> {
+        unimplemented!()
+    }
+
+    fn get_bus_info(
+        &self,
+        _type_: &MediaType,
+        _dir: &BusDirection,
+        _index: i32,
+    ) -> Result<BusInfo, ResultErr> {
+        unimplemented!()
+    }
+
+    fn get_routing_info(&self) -> Result<(RoutingInfo, RoutingInfo), ResultErr> {
+        unimplemented!()
+    }
+
+    fn activate_bus(
+        &mut self,
+        _type_: &MediaType,
+        _dir: &BusDirection,
+        _index: i32,
+        _state: bool,
+    ) -> Result<ResultOk, ResultErr> {
+        unimplemented!()
+    }
+
+    fn set_active(&self, _state: bool) -> Result<ResultOk, ResultErr> {
+        unimplemented!()
+    }
+
+    fn set_state(&mut self, _state: Stream) -> Result<ResultOk, ResultErr> {
+        unimplemented!()
+    }
+
+    fn get_state(&self, _state: Stream) -> Result<ResultOk, ResultErr> {
+        unimplemented!()
+    }
+}
+
 #[VST3(implements(IComponent, IAudioProcessor))]
 pub(crate) struct VST3Component {
-    inner: *mut c_void,
+    inner: Mutex<Box<dyn PluginBase>>,
 }
 
 impl VST3Component {
     pub(crate) fn new() -> Box<Self> {
-        Self::allocate(null_mut())
+        Self::allocate(Mutex::new(DummyComponent::new()))
     }
 
-    pub(crate) fn set_component(&mut self, component: *mut c_void) {
-        self.inner = component
+    pub(crate) fn set_plugin_base(&mut self, plugin_base: Box<dyn PluginBase>) {
+        self.inner = Mutex::new(plugin_base)
     }
 
-    #[allow(clippy::borrowed_box)]
-    pub(crate) unsafe fn get_component(&self) -> &Mutex<Box<dyn Component>> {
-        *(self.inner as *mut &Mutex<Box<dyn Component>>)
+    pub(crate) fn get_plugin_base(&self) -> &Mutex<Box<dyn PluginBase>> {
+        &self.inner
     }
 }
 
 impl IPluginBase for VST3Component {
     unsafe fn initialize(&self, context: *mut c_void) -> i32 {
         if let Some(context) = HostApplication::from_raw(context) {
-            return match self.get_component().lock().unwrap().initialize(*context) {
+            return match self.get_plugin_base().lock().unwrap().initialize(*context) {
                 Ok(r) => r.into(),
                 Err(r) => r.into(),
             };
@@ -204,7 +266,7 @@ impl IPluginBase for VST3Component {
     }
 
     unsafe fn terminate(&self) -> i32 {
-        match self.get_component().lock().unwrap().terminate() {
+        match self.get_plugin_base().lock().unwrap().terminate() {
             Ok(r) => r.into(),
             Err(r) => r.into(),
         }
@@ -213,42 +275,37 @@ impl IPluginBase for VST3Component {
 
 impl IComponent for VST3Component {
     unsafe fn get_controller_class_id(&self, tuid: *mut IID) -> i32 {
-        return match self
-            .get_component()
-            .lock()
-            .unwrap()
-            .get_controller_class_id()
-        {
-            Ok(controller_class_id) => {
-                *tuid = controller_class_id.to_guid();
-                ResOk.into()
-            }
-            Err(result) => result.into(),
-        };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            return match component.get_controller_class_id() {
+                Ok(controller_class_id) => {
+                    *tuid = controller_class_id.to_guid();
+                    ResOk.into()
+                }
+                Err(result) => result.into(),
+            };
+        }
+        NotImplemented.into()
     }
 
     unsafe fn set_io_mode(&self, mode: i32) -> i32 {
-        return match self
-            .get_component()
-            .lock()
-            .unwrap()
-            .set_io_mode(IoMode::from(mode))
-        {
-            Ok(r) => r.into(),
-            Err(r) => r.into(),
-        };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            return match component.set_io_mode(IoMode::from(mode)) {
+                Ok(r) => r.into(),
+                Err(r) => r.into(),
+            };
+        }
+        NotImplemented.into()
     }
 
     unsafe fn get_bus_count(&self, type_: i32, dir: i32) -> i32 {
-        return match self
-            .get_component()
-            .lock()
-            .unwrap()
-            .get_bus_count(&MediaType::from(type_), &BusDirection::from(dir))
-        {
-            Ok(bus_count) => bus_count,
-            Err(_) => 0,
-        };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            return match component.get_bus_count(&MediaType::from(type_), &BusDirection::from(dir))
+            {
+                Ok(bus_count) => bus_count,
+                Err(_) => 0,
+            };
+        }
+        0
     }
 
     unsafe fn get_bus_info(
@@ -258,17 +315,20 @@ impl IComponent for VST3Component {
         index: i32,
         info: *mut vst3_sys::vst::BusInfo,
     ) -> i32 {
-        return match self.get_component().lock().unwrap().get_bus_info(
-            &MediaType::from(type_),
-            &BusDirection::from(dir),
-            index,
-        ) {
-            Ok(bus_info) => {
-                *info = bus_info.into();
-                ResOk.into()
-            }
-            Err(r) => r.into(),
-        };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            return match component.get_bus_info(
+                &MediaType::from(type_),
+                &BusDirection::from(dir),
+                index,
+            ) {
+                Ok(bus_info) => {
+                    *info = bus_info.into();
+                    ResOk.into()
+                }
+                Err(r) => r.into(),
+            };
+        }
+        NotImplemented.into()
     }
 
     unsafe fn get_routing_info(
@@ -276,54 +336,69 @@ impl IComponent for VST3Component {
         in_info: *mut vst3_sys::vst::RoutingInfo,
         out_info: *mut vst3_sys::vst::RoutingInfo,
     ) -> i32 {
-        return match self.get_component().lock().unwrap().get_routing_info() {
-            Ok(routing_info) => {
-                *in_info = routing_info.0.into();
-                *out_info = routing_info.1.into();
-                ResOk.into()
-            }
-            Err(r) => r.into(),
-        };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            return match component.get_routing_info() {
+                Ok(routing_info) => {
+                    *in_info = routing_info.0.into();
+                    *out_info = routing_info.1.into();
+                    ResOk.into()
+                }
+                Err(r) => r.into(),
+            };
+        }
+        NotImplemented.into()
     }
 
     unsafe fn activate_bus(&self, type_: i32, dir: i32, index: i32, state: u8) -> i32 {
-        let state = if state != 0 { true } else { false };
-        return match self.get_component().lock().unwrap().activate_bus(
-            &MediaType::from(type_),
-            &BusDirection::from(dir),
-            index,
-            state,
-        ) {
-            Ok(r) => r.into(),
-            Err(r) => r.into(),
-        };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            let state = if state != 0 { true } else { false };
+            return match component.activate_bus(
+                &MediaType::from(type_),
+                &BusDirection::from(dir),
+                index,
+                state,
+            ) {
+                Ok(r) => r.into(),
+                Err(r) => r.into(),
+            };
+        }
+        NotImplemented.into()
     }
 
     unsafe fn set_active(&self, state: u8) -> i32 {
-        let state = if state != 0 { true } else { false };
-        return match self.get_component().lock().unwrap().set_active(state) {
-            Ok(r) => r.into(),
-            Err(r) => r.into(),
-        };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            let state = if state != 0 { true } else { false };
+            return match component.set_active(state) {
+                Ok(r) => r.into(),
+                Err(r) => r.into(),
+            };
+        }
+        NotImplemented.into()
     }
 
     unsafe fn set_state(&self, state: *mut c_void) -> i32 {
-        if let Some(state) = Stream::from_raw(state) {
-            return match self.get_component().lock().unwrap().set_state(*state) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            if let Some(state) = Stream::from_raw(state) {
+                return match component.set_state(*state) {
+                    Ok(r) => r.into(),
+                    Err(r) => r.into(),
+                };
+            }
+            return InvalidArgument.into();
         }
-        return InvalidArgument.into();
+        NotImplemented.into()
     }
 
     unsafe fn get_state(&self, state: *mut c_void) -> i32 {
-        if let Some(state) = Stream::from_raw(state) {
-            return match self.get_component().lock().unwrap().get_state(*state) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
+            if let Some(state) = Stream::from_raw(state) {
+                return match component.get_state(*state) {
+                    Ok(r) => r.into(),
+                    Err(r) => r.into(),
+                };
+            }
+            return InvalidArgument.into();
         }
-        return InvalidArgument.into();
+        NotImplemented.into()
     }
 }

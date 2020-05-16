@@ -1,9 +1,11 @@
+use vst3_sys::vst::{kNoParentUnitId, kNoProgramListId, kRootUnitId};
+
 use crate::wstrcpy;
 
-pub const ROOT_UNIT_ID: i32 = 0;
-pub const NO_PARENT_UNIT_ID: i32 = -1;
+pub const ROOT_UNIT_ID: i32 = kRootUnitId;
+pub const NO_PARENT_UNIT_ID: i32 = kNoParentUnitId;
 
-pub const NO_PROGRAM_LIST_ID: i32 = -1;
+pub const NO_PROGRAM_LIST_ID: i32 = kNoProgramListId;
 
 pub struct Unit {
     pub id: i32,
@@ -14,14 +16,14 @@ pub struct Unit {
 
 impl Unit {
     pub fn get_info(&self) -> vst3_sys::vst::UnitInfo {
-        let mut unit_info = vst3_sys::vst::UnitInfo {
+        let mut info = vst3_sys::vst::UnitInfo {
             id: self.id,
             parent_unit_id: self.parent_unit_id,
             name: [0; 128],
             program_list_id: self.program_list_id,
         };
-        unsafe { wstrcpy(&self.name, unit_info.name.as_mut_ptr() as *mut i16) };
-        unit_info
+        unsafe { wstrcpy(&self.name, info.name.as_mut_ptr() as *mut i16) };
+        info
     }
 }
 
@@ -77,16 +79,16 @@ impl ProgramList {
         }
     }
 
-    pub fn get_program_list_info(&self) -> vst3_sys::vst::ProgramListInfo {
-        let mut program_list_info = vst3_sys::vst::ProgramListInfo {
+    pub fn get_info(&self) -> vst3_sys::vst::ProgramListInfo {
+        let mut info = vst3_sys::vst::ProgramListInfo {
             id: self.id,
             name: [0; 128],
             program_count: self.program_count,
         };
         unsafe {
-            wstrcpy(&self.name, program_list_info.name.as_mut_ptr() as *mut i16);
+            wstrcpy(&self.name, info.name.as_mut_ptr() as *mut i16);
         }
 
-        program_list_info
+        info
     }
 }

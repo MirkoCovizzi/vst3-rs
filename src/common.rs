@@ -1,9 +1,28 @@
 use std::ffi::CStr;
+use std::os::raw::{c_char, c_short, c_void};
+use std::ptr::copy_nonoverlapping;
 
-use crate::{AudioProcessor, Component, EditController, HostApplication, ResultErr, ResultOk};
-use std::ops::Add;
+use widestring::U16CString;
+
 use vst3_com::sys::GUID;
 use vst3_sys::vst::{kFx, kVstAudioEffectClass, kVstComponentControllerClass};
+
+use crate::{AudioProcessor, Component, EditController, HostApplication, ResultErr, ResultOk};
+
+/// If the source &str is too long, it gets truncated to fit into the destination
+pub(crate) unsafe fn strcpy(src: &str, dst: *mut c_char) {
+    let mut src = src.to_string().into_bytes();
+    src.push(0);
+    copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
+}
+
+/// If the source &str is too long, it gets truncated to fit into the destination
+pub(crate) unsafe fn wstrcpy(src: &str, dst: *mut c_short) {
+    let src = U16CString::from_str(src).unwrap();
+    let mut src = src.into_vec();
+    src.push(0);
+    copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
+}
 
 #[derive(Clone)]
 pub enum Category {
@@ -44,95 +63,176 @@ impl ToString for FxSubcategory {
 const MANY_INSTANCES: u32 = 0x7FFFFFFF;
 
 pub struct ClassInfo {
-    pub cid: UID,
-    pub cardinality: u32,
-    pub category: Category,
-    pub name: String,
-    pub class_flags: u32,
-    pub subcategories: FxSubcategory,
-    pub vendor: String,
-    pub version: String,
-    pub sdk_version: String,
+    cid: &'static UID,
+    cardinality: u32,
+    category: &'static Category,
+    name: &'static str,
+    class_flags: u32,
+    subcategories: &'static FxSubcategory,
+    vendor: &'static str,
+    version: &'static str,
+    sdk_version: &'static str,
+}
+
+impl ClassInfo {
+    pub fn get_cid(&self) -> &UID {
+        &self.cid
+    }
+
+    pub fn get_info(&self) -> vst3_sys::base::PClassInfo {
+        let mut info = vst3_sys::base::PClassInfo {
+            cid: self.cid.to_guid(),
+            cardinality: self.cardinality as i32,
+            category: [0; 32],
+            name: [0; 64],
+        };
+
+        unsafe {
+            strcpy(&self.category.to_string(), info.category.as_mut_ptr());
+            strcpy(self.name, info.name.as_mut_ptr());
+        }
+
+        info
+    }
+
+    pub fn get_info_2(&self) -> vst3_sys::base::PClassInfo2 {
+        let mut info = vst3_sys::base::PClassInfo2 {
+            cid: self.cid.to_guid(),
+            cardinality: self.cardinality as i32,
+            category: [0; 32],
+            name: [0; 64],
+            class_flags: 0,
+            subcategories: [0; 128],
+            vendor: [0; 64],
+            version: [0; 64],
+            sdk_version: [0; 64],
+        };
+
+        unsafe {
+            strcpy(&self.category.to_string(), info.category.as_mut_ptr());
+            strcpy(self.name, info.name.as_mut_ptr());
+            strcpy(
+                &self.subcategories.to_string(),
+                info.subcategories.as_mut_ptr(),
+            );
+            strcpy(self.vendor, info.vendor.as_mut_ptr());
+            strcpy(self.version, info.version.as_mut_ptr());
+            strcpy(self.sdk_version, info.sdk_version.as_mut_ptr());
+        }
+
+        info
+    }
+
+    pub fn get_info_w(&self) -> vst3_sys::base::PClassInfoW {
+        let mut info = vst3_sys::base::PClassInfoW {
+            cid: self.cid.to_guid(),
+            cardinality: self.cardinality as i32,
+            category: [0; 32],
+            name: [0; 64],
+            class_flags: self.class_flags,
+            subcategories: [0; 128],
+            vendor: [0; 64],
+            version: [0; 64],
+            sdk_version: [0; 64],
+        };
+
+        unsafe {
+            strcpy(&self.category.to_string(), info.category.as_mut_ptr());
+            wstrcpy(self.name, info.name.as_mut_ptr());
+            strcpy(
+                &self.subcategories.to_string(),
+                info.subcategories.as_mut_ptr(),
+            );
+            wstrcpy(self.vendor, info.vendor.as_mut_ptr());
+            wstrcpy(self.version, info.version.as_mut_ptr());
+            wstrcpy(self.sdk_version, info.sdk_version.as_mut_ptr());
+        }
+
+        info
+    }
 }
 
 pub struct ClassInfoBuilder {
-    cid: UID,
+    cid: &'static UID,
     cardinality: u32,
-    category: Category,
-    name: String,
+    category: &'static Category,
+    name: &'static str,
     class_flags: u32,
-    subcategories: FxSubcategory,
-    vendor: String,
-    version: String,
-    sdk_version: String,
+    subcategories: &'static FxSubcategory,
+    vendor: &'static str,
+    version: &'static str,
+    sdk_version: &'static str,
 }
 
 impl ClassInfoBuilder {
-    pub fn new(cid: UID) -> ClassInfoBuilder {
+    pub const fn new(cid: &'static UID) -> ClassInfoBuilder {
         ClassInfoBuilder {
             cid,
-            name: "VST3".to_string(),
+            name: "VST3",
             cardinality: MANY_INSTANCES,
-            category: Category::AudioEffect,
+            category: &Category::AudioEffect,
             class_flags: 0,
-            subcategories: FxSubcategory::NoSubcategory,
-            vendor: String::new(),
-            version: "0.1.0".to_string(),
-            sdk_version: "VST 3.6.14".to_string(),
+            subcategories: &FxSubcategory::NoSubcategory,
+            vendor: "",
+            version: "0.1.0",
+            sdk_version: "VST 3.6.14",
         }
     }
 
-    pub fn name(mut self, name: &str) -> ClassInfoBuilder {
-        self.name = name.to_string();
+    pub const fn name(mut self, name: &'static str) -> ClassInfoBuilder {
+        self.name = name;
         self
     }
 
-    pub fn cardinality(mut self, cardinality: u32) -> ClassInfoBuilder {
+    pub const fn cardinality(mut self, cardinality: u32) -> ClassInfoBuilder {
         self.cardinality = cardinality;
         self
     }
 
-    pub fn category(mut self, category: Category) -> ClassInfoBuilder {
+    pub const fn category(mut self, category: &'static Category) -> ClassInfoBuilder {
         self.category = category;
         self
     }
 
-    pub fn class_flags(mut self, class_flags: u32) -> ClassInfoBuilder {
+    pub const fn class_flags(mut self, class_flags: u32) -> ClassInfoBuilder {
         self.class_flags = class_flags;
         self
     }
 
-    pub fn subcategories(mut self, subcategories: FxSubcategory) -> ClassInfoBuilder {
+    pub const fn subcategories(
+        mut self,
+        subcategories: &'static FxSubcategory,
+    ) -> ClassInfoBuilder {
         self.subcategories = subcategories;
         self
     }
 
-    pub fn vendor(mut self, vendor: &str) -> ClassInfoBuilder {
-        self.vendor = vendor.to_string();
+    pub const fn vendor(mut self, vendor: &'static str) -> ClassInfoBuilder {
+        self.vendor = vendor;
         self
     }
 
-    pub fn version(mut self, version: &str) -> ClassInfoBuilder {
-        self.version = version.to_string();
+    pub const fn version(mut self, version: &'static str) -> ClassInfoBuilder {
+        self.version = version;
         self
     }
 
-    pub fn sdk_version(mut self, sdk_version: &str) -> ClassInfoBuilder {
-        self.sdk_version = sdk_version.to_string();
+    pub const fn sdk_version(mut self, sdk_version: &'static str) -> ClassInfoBuilder {
+        self.sdk_version = sdk_version;
         self
     }
 
-    pub fn build(&self) -> ClassInfo {
+    pub const fn build(&self) -> ClassInfo {
         ClassInfo {
-            cid: self.cid.clone(),
+            cid: self.cid,
             cardinality: self.cardinality,
-            category: self.category.clone(),
-            name: self.name.clone(),
+            category: self.category,
+            name: self.name,
             class_flags: self.class_flags,
-            subcategories: self.subcategories.clone(),
-            vendor: self.vendor.clone(),
-            version: self.version.clone(),
-            sdk_version: self.sdk_version.clone(),
+            subcategories: self.subcategories,
+            vendor: self.vendor,
+            version: self.version,
+            sdk_version: self.sdk_version,
         }
     }
 }
@@ -142,7 +242,9 @@ impl UID {
     pub const fn new(uid: [u32; 4]) -> Self {
         Self { 0: uid }
     }
-    pub(crate) fn to_guid(&self) -> GUID {
+
+    // todo: make it pub(crate)
+    pub fn to_guid(&self) -> GUID {
         let mut tuid: [u8; 16] = [0; 16];
         for i in 0..4 {
             let big_e = self.0[i].to_be_bytes();
@@ -161,6 +263,7 @@ impl UID {
 
         GUID { data: tuid }
     }
+
     pub(crate) fn auto_inc(mut self) -> Self {
         if self.0[3] == u32::MAX {
             self.0[3] = 0;

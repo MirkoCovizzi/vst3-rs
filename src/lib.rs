@@ -36,25 +36,7 @@ pub use unit::*;
 pub use unit_info::*;
 pub use unknown::*;
 
-use std::os::raw::{c_char, c_short, c_void};
-use std::ptr::copy_nonoverlapping;
-
-use widestring::U16CString;
-
-/// If the source &str is too long, it gets truncated to fit into the destination
-unsafe fn strcpy(src: &str, dst: *mut c_char) {
-    let mut src = src.to_string().into_bytes();
-    src.push(0);
-    copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
-}
-
-/// If the source &str is too long, it gets truncated to fit into the destination
-unsafe fn wstrcpy(src: &str, dst: *mut c_short) {
-    let src = U16CString::from_str(src).unwrap();
-    let mut src = src.into_vec();
-    src.push(0);
-    copy_nonoverlapping(src.as_ptr() as *const c_void as *const _, dst, src.len());
-}
+use std::os::raw::c_void;
 
 #[macro_export]
 macro_rules! basic_plugin {
@@ -197,9 +179,8 @@ macro_rules! factory_main {
     };
 }
 
-pub fn create_factory<T: Factory + Default>() -> *mut c_void {
-    let f = Box::into_raw(Box::new(T::new() as Box<dyn Factory>)) as *mut _;
+pub fn create_factory<T: 'static + PluginFactory + Default>() -> *mut c_void {
     let mut factory = VST3PluginFactory::new();
-    factory.set_factory(f);
+    factory.set_factory(T::new());
     Box::into_raw(factory) as *mut c_void
 }

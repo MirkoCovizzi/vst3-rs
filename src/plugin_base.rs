@@ -8,19 +8,33 @@ use vst3_sys::VST3;
 
 use crate::ResultErr::InvalidArgument;
 use crate::{
-    AudioProcessor, ClassInfo, Component, EditController, HostApplication, ResultErr, ResultOk,
-    UnitInfo, Unknown,
+    AudioProcessor, ClassInfo, Component, EditController, HostApplication, MidiMapping, ResultErr,
+    ResultOk, UnitInfo, Unknown,
 };
 
 pub trait PluginBase {
-    fn new() -> Box<Self>
+    fn new() -> Box<dyn PluginBase>
     where
-        Self: Sized + Default,
+        Self: 'static + Sized + Default,
     {
-        Box::new(Default::default())
+        Box::new(Self::default()) as Box<dyn PluginBase>
     }
 
-    fn get_class_info(&self) -> ClassInfo;
+    fn as_component(&mut self) -> Option<&mut dyn Component> {
+        None
+    }
+    fn as_edit_controller(&mut self) -> Option<&mut dyn EditController> {
+        None
+    }
+    fn as_audio_processor(&mut self) -> Option<&mut dyn AudioProcessor> {
+        None
+    }
+    fn as_unit_info(&mut self) -> Option<&mut dyn UnitInfo> {
+        None
+    }
+    fn as_midi_mapping(&mut self) -> Option<&mut dyn MidiMapping> {
+        None
+    }
 
     fn initialize(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr>;
     fn terminate(&mut self) -> Result<ResultOk, ResultErr>;

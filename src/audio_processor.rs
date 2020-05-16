@@ -275,7 +275,7 @@ impl IAudioProcessor for VST3Component {
         outputs: *mut u64,
         num_outs: i32,
     ) -> i32 {
-        if let Some(audio_processor) = self.get_component().lock().unwrap().as_audio_processor() {
+        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             let inputs = slice::from_raw_parts(inputs, num_ins as usize);
             let outputs = slice::from_raw_parts(outputs, num_outs as usize);
             return match audio_processor.set_bus_arrangements(inputs, outputs) {
@@ -287,7 +287,7 @@ impl IAudioProcessor for VST3Component {
     }
 
     unsafe fn get_bus_arrangement(&self, dir: i32, index: i32, arr: *mut u64) -> i32 {
-        if let Some(audio_processor) = self.get_component().lock().unwrap().as_audio_processor() {
+        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             return match audio_processor.get_bus_arrangement(&BusDirection::from(dir), index) {
                 Ok(bus_arrangement) => {
                     *arr = bus_arrangement;
@@ -300,7 +300,7 @@ impl IAudioProcessor for VST3Component {
     }
 
     unsafe fn can_process_sample_size(&self, symbolic_sample_size: i32) -> i32 {
-        if let Some(audio_processor) = self.get_component().lock().unwrap().as_audio_processor() {
+        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             return match audio_processor
                 .can_process_sample_size(SymbolicSampleSize::from(symbolic_sample_size))
             {
@@ -312,7 +312,7 @@ impl IAudioProcessor for VST3Component {
     }
 
     unsafe fn get_latency_samples(&self) -> u32 {
-        if let Some(audio_processor) = self.get_component().lock().unwrap().as_audio_processor() {
+        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             return match audio_processor.get_latency_samples() {
                 Ok(latency_samples) => latency_samples,
                 Err(_) => 0,
@@ -322,7 +322,7 @@ impl IAudioProcessor for VST3Component {
     }
 
     unsafe fn setup_processing(&self, setup: *mut vst3_sys::vst::ProcessSetup) -> i32 {
-        if let Some(audio_processor) = self.get_component().lock().unwrap().as_audio_processor() {
+        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             return match audio_processor.setup_processing(ProcessSetup::from(*setup)) {
                 Ok(r) => r.into(),
                 Err(r) => r.into(),
@@ -332,7 +332,7 @@ impl IAudioProcessor for VST3Component {
     }
 
     unsafe fn set_processing(&self, state: u8) -> i32 {
-        if let Some(audio_processor) = self.get_component().lock().unwrap().as_audio_processor() {
+        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             let state = if state != 0 { true } else { false };
             return match audio_processor.set_processing(state) {
                 Ok(r) => r.into(),
@@ -343,7 +343,7 @@ impl IAudioProcessor for VST3Component {
     }
 
     unsafe fn process(&self, data: *mut vst3_sys::vst::ProcessData) -> i32 {
-        if let Some(audio_processor) = self.get_component().lock().unwrap().as_audio_processor() {
+        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             if data.is_null() {
                 return InvalidArgument.into();
             }
@@ -393,7 +393,7 @@ impl IAudioProcessor for VST3Component {
     }
 
     unsafe fn get_tail_samples(&self) -> u32 {
-        if let Some(audio_processor) = self.get_component().lock().unwrap().as_audio_processor() {
+        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             return match audio_processor.get_tail_samples() {
                 Ok(tail_samples) => tail_samples,
                 Err(_) => 0,
