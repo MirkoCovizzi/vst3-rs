@@ -39,88 +39,70 @@ pub use unknown::*;
 use std::os::raw::c_void;
 
 #[macro_export]
-macro_rules! basic_plugin {
-    (
-        name: $name:expr,
-        vendor: $vendor:expr,
-        plugins: [$($plugin:ident), +]
-    ) => {
-        struct DefaultFactory {
-            controllers: std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::PluginBase>>>,
-            components: std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::PluginBase>>>,
-        }
-
-        impl std::default::Default for DefaultFactory {
-            fn default() -> Self {
-                DefaultFactory {
-                    controllers: std::vec![$(std::sync::Mutex::new($crate::BasicPluginEditController::new($plugin::new(), $plugin::UID, $name, $vendor))), *],
-                    components: std::vec![$(std::sync::Mutex::new($crate::BasicPluginComponent::new($plugin::new(), $plugin::UID, $name, $vendor))), *]
-                }
-            }
-        }
-
-        impl $crate::Factory for DefaultFactory {
-            fn get_info(&self) -> $crate::FactoryInfo {
-                $crate::FactoryInfo {
-                    vendor: $vendor.to_string(),
-                    url: "".to_string(),
-                    email: "".to_string(),
-                    flags: vst3_sys::vst::kDefaultFactoryFlags,
-                }
-            }
-
-            fn get_edit_controllers(&self) -> &std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::PluginBase>>> {
-                &self.controllers
-            }
-
-            fn get_components(&self) -> &std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::PluginBase>>> {
-                &self.components
-            }
-        }
-
-        $crate::factory_main!(DefaultFactory);
-    };
-}
-
-#[macro_export]
 macro_rules! plugin_main {
     (
         vendor: $vendor:expr,
         url: $url:expr,
         email: $email:expr,
-        edit_controllers: [$($edit_controller:ident), +],
-        components: [$($component:ident), +]
+        classes: [$($class:ident), +]
     ) => {
         struct DefaultFactory {
-            edit_controllers: std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::EditController>>>,
-            components: std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::Component>>>,
+            classes: std::vec::Vec<($crate::ClassInfo, fn() -> std::boxed::Box<dyn $crate::PluginBase>)>,
+            context: std::option::Option<$crate::HostApplication>,
+        }
+
+        impl DefaultFactory {
+            const INFO: FactoryInfo = FactoryInfo {
+                vendor: $vendor,
+                url: $url,
+                email: $email,
+                flags: vst3_sys::vst::kDefaultFactoryFlags,
+            };
         }
 
         impl std::default::Default for DefaultFactory {
             fn default() -> Self {
-                DefaultFactory {
-                    edit_controllers: std::vec![$(std::sync::Mutex::new($edit_controller::new())), *],
-                    components: std::vec![$(std::sync::Mutex::new($component::new())), *],
+                Self {
+                    classes: std::vec![$(($class::INFO, $class::new)), *],
+                    context: None
                 }
             }
         }
 
-        impl $crate::Factory for DefaultFactory {
-            fn get_info(&self) -> $crate::FactoryInfo {
-                $crate::FactoryInfo {
-                    vendor: $vendor.to_string(),
-                    url: $url.to_string(),
-                    email: $email.to_string(),
-                    flags: vst3_sys::vst::kDefaultFactoryFlags,
+        impl $crate::PluginFactory for DefaultFactory {
+            fn get_factory_info(&self) -> std::result::Result<&$crate::FactoryInfo, $crate::ResultErr> {
+                std::result::Result::Ok(&Self::INFO)
+            }
+
+            fn count_classes(&self) -> std::result::Result<u32, $crate::ResultErr> {
+                std::result::Result::Ok(self.classes.len() as u32)
+            }
+
+            fn get_class_info(&self, index: u32) -> std::result::Result<&$crate::ClassInfo, $crate::ResultErr> {
+                if index as usize >= self.classes.len() {
+                    return std::result::Result::Err($crate::ResultErr::InvalidArgument);
                 }
+
+                std::result::Result::Ok(&self.classes[index as usize].0)
             }
 
-            fn get_edit_controllers(&self) -> &std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::EditController>>> {
-                &self.edit_controllers
+            fn create_instance(&self, cid: $crate::UID) -> std::result::Result<std::boxed::Box<dyn $crate::PluginBase>, $crate::ResultErr> {
+                for c in &self.classes {
+                    if cid == *c.0.get_cid() {
+                        return std::result::Result::Ok(c.1());
+                    }
+                }
+                std::result::Result::Err($crate::ResultErr::ResultFalse)
             }
 
-            fn get_components(&self) -> &std::vec::Vec<std::sync::Mutex<std::boxed::Box<dyn $crate::Component>>> {
-                &self.components
+            fn set_host_context(&mut self, context: $crate::HostApplication) -> std::result::Result<$crate::ResultOk, $crate::ResultErr> {
+                if self.context.is_some() {
+                    return std::result::Result::Err($crate::ResultErr::ResultFalse);
+                }
+
+                self.context = std::option::Option::Some(context);
+
+                std::result::Result::Ok($crate::ResultOk::ResOk)
             }
         }
 

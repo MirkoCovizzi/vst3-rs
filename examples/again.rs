@@ -9,7 +9,7 @@ use vst3::ParameterFlag::{CanAutomate, IsBypass, IsReadOnly};
 use vst3::ResultErr::{InvalidArgument, NotImplemented, ResultFalse};
 use vst3::ResultOk::ResOk;
 use vst3::{
-    factory_main, get_channel_count, AudioProcessor, BaseAudioBus, BaseEventBus, BaseParameter,
+    get_channel_count, plugin_main, AudioProcessor, BaseAudioBus, BaseEventBus, BaseParameter,
     BusDirection, BusInfo, BusType, BusVec, Category, ClassInfo, ClassInfoBuilder, Component,
     ComponentHandler, EditController, FactoryInfo, FxSubcategory, HostApplication, IoMode,
     MediaType, Parameter, ParameterContainer, ParameterInfo, ParameterInfoBuilder, PlugView,
@@ -17,9 +17,6 @@ use vst3::{
     SeekMode, Stream, SymbolicSampleSize, Unit, UnitBuilder, UnitInfo, NO_PROGRAM_LIST_ID,
     ROOT_UNIT_ID, STEREO, UID,
 };
-
-use std::any::Any;
-use vst3_com::IID;
 
 const GAIN_ID: u32 = 0;
 const VU_PPM: u32 = 1;
@@ -633,67 +630,9 @@ impl AudioProcessor for AGainComponent {
     }
 }
 
-struct AGainFactory {
-    classes: Vec<(ClassInfo, fn() -> Box<dyn PluginBase>)>,
-    context: Option<HostApplication>,
-}
-
-impl AGainFactory {
-    const INFO: FactoryInfo = FactoryInfo {
-        vendor: "rust.audio",
-        url: "https://rust.audio",
-        email: "rust@audio.com",
-        flags: 16,
-    };
-}
-
-impl Default for AGainFactory {
-    fn default() -> Self {
-        Self {
-            classes: vec![
-                (AGainEditController::INFO, AGainEditController::new),
-                (AGainComponent::INFO, AGainComponent::new),
-            ],
-            context: None,
-        }
-    }
-}
-
-impl PluginFactory for AGainFactory {
-    fn get_factory_info(&self) -> Result<&FactoryInfo, ResultErr> {
-        Ok(&Self::INFO)
-    }
-
-    fn count_classes(&self) -> Result<u32, ResultErr> {
-        Ok(self.classes.len() as u32)
-    }
-
-    fn get_class_info(&self, index: u32) -> Result<&ClassInfo, ResultErr> {
-        if index as usize >= self.classes.len() {
-            return Err(InvalidArgument);
-        }
-
-        Ok(&self.classes[index as usize].0)
-    }
-
-    fn create_instance(&self, cid: UID) -> Result<Box<dyn PluginBase>, ResultErr> {
-        for c in &self.classes {
-            if cid == *c.0.get_cid() {
-                return Ok(c.1());
-            }
-        }
-        Err(ResultFalse)
-    }
-
-    fn set_host_context(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr> {
-        if self.context.is_some() {
-            return Err(ResultFalse);
-        }
-
-        self.context = Some(context);
-
-        Ok(ResOk)
-    }
-}
-
-factory_main!(AGainFactory);
+plugin_main!(
+    vendor: "rust.audio",
+    url: "https://rust.audio",
+    email: "mailto:rust@audio.com",
+    classes: [AGainEditController, AGainComponent]
+);

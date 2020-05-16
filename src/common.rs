@@ -292,8 +292,8 @@ impl UID {
 
 #[cfg(test)]
 mod tests {
-    use vst3_com::sys::GUID;
     use crate::UID;
+    use vst3_com::sys::GUID;
 
     #[test]
     fn test_from_guid() {
