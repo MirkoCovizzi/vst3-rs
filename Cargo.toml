@@ -17,11 +17,3 @@ num-traits = "0.2.11"
 [[example]]
 name = "again"
 crate-type = ["cdylib"]
-
-[[example]]
-name = "again_simple"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "dimension_expander"
-crate-type = ["cdylib"]

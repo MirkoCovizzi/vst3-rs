@@ -62,6 +62,7 @@ impl ToString for FxSubcategory {
 
 const MANY_INSTANCES: u32 = 0x7FFFFFFF;
 
+// todo: change lifetimes?
 pub struct ClassInfo {
     cid: &'static UID,
     cardinality: u32,
@@ -152,6 +153,7 @@ impl ClassInfo {
     }
 }
 
+// todo: change lifetimes?
 pub struct ClassInfoBuilder {
     cid: &'static UID,
     cardinality: u32,
@@ -236,15 +238,15 @@ impl ClassInfoBuilder {
         }
     }
 }
-#[derive(Clone, Debug)]
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UID([u32; 4]);
 impl UID {
     pub const fn new(uid: [u32; 4]) -> Self {
         Self { 0: uid }
     }
 
-    // todo: make it pub(crate)
-    pub fn to_guid(&self) -> GUID {
+    pub(crate) fn to_guid(&self) -> GUID {
         let mut tuid: [u8; 16] = [0; 16];
         for i in 0..4 {
             let big_e = self.0[i].to_be_bytes();
@@ -253,15 +255,20 @@ impl UID {
             }
         }
 
-        #[cfg(target_os = "windows")]
-        {
-            tuid.swap(0, 3);
-            tuid.swap(1, 2);
-            tuid.swap(4, 5);
-            tuid.swap(6, 7);
-        }
-
         GUID { data: tuid }
+    }
+
+    pub(crate) fn from_guid(guid: &GUID) -> Self {
+        let mut tuid = guid.data;
+        let mut out = [0u32; 4];
+        for i in 0..4 {
+            let mut temp = 0u32;
+            for j in 0..4 {
+                temp |= (tuid[i * 4 + j] as u32) << (3 - j as u32) * 8;
+            }
+            out[i] = temp;
+        }
+        Self::new(out)
     }
 
     pub(crate) fn auto_inc(mut self) -> Self {
@@ -280,5 +287,17 @@ impl UID {
             self.0[3] -= 1;
         }
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use vst3_com::sys::GUID;
+    use crate::UID;
+
+    #[test]
+    fn test_from_guid() {
+        let uid = UID::new([0xABCDEF12, 0x34567890, 0x12345678, 0x90123456]);
+        assert_eq!(UID::from_guid(&uid.to_guid()), uid);
     }
 }

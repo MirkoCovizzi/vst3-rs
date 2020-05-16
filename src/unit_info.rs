@@ -27,7 +27,7 @@ pub trait UnitInfo: EditController {
     fn select_unit(&self, id: i32) -> Result<ResultOk, ResultErr>;
     fn get_unit_by_bus(
         &self,
-        type_: i32,
+        media_type: i32,
         dir: i32,
         bus_index: i32,
         channel: i32,

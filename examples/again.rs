@@ -9,7 +9,7 @@ use vst3::ParameterFlag::{CanAutomate, IsBypass, IsReadOnly};
 use vst3::ResultErr::{InvalidArgument, NotImplemented, ResultFalse};
 use vst3::ResultOk::ResOk;
 use vst3::{
-    get_channel_count, factory_main, AudioProcessor, BaseAudioBus, BaseEventBus, BaseParameter,
+    factory_main, get_channel_count, AudioProcessor, BaseAudioBus, BaseEventBus, BaseParameter,
     BusDirection, BusInfo, BusType, BusVec, Category, ClassInfo, ClassInfoBuilder, Component,
     ComponentHandler, EditController, FactoryInfo, FxSubcategory, HostApplication, IoMode,
     MediaType, Parameter, ParameterContainer, ParameterInfo, ParameterInfoBuilder, PlugView,
@@ -18,8 +18,8 @@ use vst3::{
     ROOT_UNIT_ID, STEREO, UID,
 };
 
-use vst3_com::IID;
 use std::any::Any;
+use vst3_com::IID;
 
 const GAIN_ID: u32 = 0;
 const VU_PPM: u32 = 1;
@@ -670,19 +670,16 @@ impl PluginFactory for AGainFactory {
 
     fn get_class_info(&self, index: u32) -> Result<&ClassInfo, ResultErr> {
         if index as usize >= self.classes.len() {
-            return Err(InvalidArgument)
+            return Err(InvalidArgument);
         }
 
         Ok(&self.classes[index as usize].0)
     }
 
-    // todo: convert should use UID instead of IID
-    fn create_instance(&self, cid: *const IID) -> Result<Box<dyn PluginBase>, ResultErr> {
+    fn create_instance(&self, cid: UID) -> Result<Box<dyn PluginBase>, ResultErr> {
         for c in &self.classes {
-            unsafe {
-                if *cid == c.0.get_cid().to_guid() {
-                    return Ok(c.1());
-                }
+            if cid == *c.0.get_cid() {
+                return Ok(c.1());
             }
         }
         Err(ResultFalse)

@@ -17,8 +17,8 @@ pub trait PlugView {
         Box::new(Default::default())
     }
 
-    fn is_platform_type_supported(&self, type_: String) -> ResultErr;
-    fn attached(&self, parent: *mut c_void, type_: String) -> ResultErr;
+    fn is_platform_type_supported(&self, platform_type: String) -> ResultErr;
+    fn attached(&self, parent: *mut c_void, platform_type: String) -> ResultErr;
     fn removed(&self) -> ResultErr;
     fn on_wheel(&self, distance: f32) -> ResultErr;
     fn on_key_down(&self, key: char, key_code: i16, modifiers: i16) -> ResultErr;

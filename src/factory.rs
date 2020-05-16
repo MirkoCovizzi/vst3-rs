@@ -18,6 +18,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::sync::Mutex;
+use vst3_com::sys::GUID;
 
 pub struct FactoryInfo {
     pub vendor: &'static str,
@@ -56,8 +57,7 @@ pub trait PluginFactory {
     fn get_factory_info(&self) -> Result<&FactoryInfo, ResultErr>;
     fn count_classes(&self) -> Result<u32, ResultErr>;
     fn get_class_info(&self, index: u32) -> Result<&ClassInfo, ResultErr>;
-    // todo: change to &UID
-    fn create_instance(&self, cid: *const IID) -> Result<Box<dyn PluginBase>, ResultErr>;
+    fn create_instance(&self, cid: UID) -> Result<Box<dyn PluginBase>, ResultErr>;
     fn set_host_context(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr>;
 }
 
@@ -82,7 +82,7 @@ impl PluginFactory for DummyFactory {
         unimplemented!()
     }
 
-    fn create_instance(&self, _cid: *const IID) -> Result<Box<dyn PluginBase>, ResultErr> {
+    fn create_instance(&self, _cid: UID) -> Result<Box<dyn PluginBase>, ResultErr> {
         unimplemented!()
     }
 
@@ -174,8 +174,8 @@ impl IPluginFactory for VST3PluginFactory {
         _iid: *const IID,
         obj: *mut *mut c_void,
     ) -> i32 {
-        // todo: convert to UID before sending to create_instance
-        return match self.inner.lock().unwrap().create_instance(cid) {
+        let uid = UID::from_guid(&*cid as &GUID);
+        return match self.inner.lock().unwrap().create_instance(uid) {
             Ok(mut object) => {
                 if object.as_edit_controller().is_some() {
                     let mut edit_controller = VST3EditController::new();

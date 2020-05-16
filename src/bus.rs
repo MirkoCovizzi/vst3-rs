@@ -187,15 +187,15 @@ impl EventBus for BaseEventBus {
 
 pub struct BusVec {
     inner: Vec<Box<dyn Bus>>,
-    pub type_: MediaType,
+    pub media_type: MediaType,
     pub direction: BusDirection,
 }
 
 impl BusVec {
-    pub fn new(type_: MediaType, direction: BusDirection) -> Self {
+    pub fn new(media_type: MediaType, direction: BusDirection) -> Self {
         Self {
             inner: vec![],
-            type_,
+            media_type,
             direction,
         }
     }

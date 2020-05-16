@@ -43,19 +43,19 @@ pub enum MediaType {
 }
 
 impl From<i32> for MediaType {
-    fn from(type_: i32) -> Self {
-        match type_ {
-            type_ if type_ == MediaTypes::kAudio as i32 => MediaType::Audio,
-            type_ if type_ == MediaTypes::kEvent as i32 => MediaType::Event,
-            type_ if type_ == MediaTypes::kNumMediaTypes as i32 => MediaType::NumMediaTypes,
+    fn from(media_type: i32) -> Self {
+        match media_type {
+            t if t == MediaTypes::kAudio as i32 => MediaType::Audio,
+            t if t == MediaTypes::kEvent as i32 => MediaType::Event,
+            t if t == MediaTypes::kNumMediaTypes as i32 => MediaType::NumMediaTypes,
             _ => unreachable!(),
         }
     }
 }
 
 impl From<MediaType> for i32 {
-    fn from(type_: MediaType) -> Self {
-        match type_ {
+    fn from(media_type: MediaType) -> Self {
+        match media_type {
             MediaType::Audio => MediaTypes::kAudio as i32,
             MediaType::Event => MediaTypes::kEvent as i32,
             MediaType::NumMediaTypes => MediaTypes::kNumMediaTypes as i32,
@@ -95,8 +95,8 @@ pub enum BusType {
 }
 
 impl From<BusType> for i32 {
-    fn from(type_: BusType) -> Self {
-        match type_ {
+    fn from(bus_type: BusType) -> Self {
+        match bus_type {
             BusType::Main => BusTypes::kMain as i32,
             BusType::Aux => BusTypes::kAux as i32,
         }
@@ -148,17 +148,17 @@ impl From<RoutingInfo> for vst3_sys::vst::RoutingInfo {
 pub trait Component: PluginBase {
     fn get_controller_class_id(&self) -> Result<UID, ResultErr>;
     fn set_io_mode(&self, mode: IoMode) -> Result<ResultOk, ResultErr>;
-    fn get_bus_count(&self, type_: &MediaType, dir: &BusDirection) -> Result<i32, ResultErr>;
+    fn get_bus_count(&self, media_type: &MediaType, dir: &BusDirection) -> Result<i32, ResultErr>;
     fn get_bus_info(
         &self,
-        type_: &MediaType,
+        media_type: &MediaType,
         dir: &BusDirection,
         index: i32,
     ) -> Result<BusInfo, ResultErr>;
     fn get_routing_info(&self) -> Result<(RoutingInfo, RoutingInfo), ResultErr>;
     fn activate_bus(
         &mut self,
-        type_: &MediaType,
+        media_type: &MediaType,
         dir: &BusDirection,
         index: i32,
         state: bool,
@@ -195,13 +195,17 @@ impl Component for DummyComponent {
         unimplemented!()
     }
 
-    fn get_bus_count(&self, _type_: &MediaType, _dir: &BusDirection) -> Result<i32, ResultErr> {
+    fn get_bus_count(
+        &self,
+        _media_type: &MediaType,
+        _dir: &BusDirection,
+    ) -> Result<i32, ResultErr> {
         unimplemented!()
     }
 
     fn get_bus_info(
         &self,
-        _type_: &MediaType,
+        _media_type: &MediaType,
         _dir: &BusDirection,
         _index: i32,
     ) -> Result<BusInfo, ResultErr> {
@@ -214,7 +218,7 @@ impl Component for DummyComponent {
 
     fn activate_bus(
         &mut self,
-        _type_: &MediaType,
+        _media_type: &MediaType,
         _dir: &BusDirection,
         _index: i32,
         _state: bool,

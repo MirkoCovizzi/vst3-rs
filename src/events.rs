@@ -83,6 +83,7 @@ impl EventList {
     }
 
     pub fn get_event(&self, index: i32) -> Result<Event, ResultErr> {
+        // todo: make safe wrapper of Event
         let mut event: Event = Event {
             bus_index: 0,
             sample_offset: 0,
