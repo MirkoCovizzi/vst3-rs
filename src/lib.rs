@@ -47,8 +47,8 @@ macro_rules! plugin_main {
         classes: [$($class:ident), +]
     ) => {
         struct DefaultFactory {
-            classes: std::vec::Vec<($crate::ClassInfo, fn() -> std::boxed::Box<dyn $crate::PluginBase>)>,
             context: std::option::Option<$crate::HostApplication>,
+            classes: std::vec::Vec<($crate::ClassInfo, fn() -> std::boxed::Box<dyn $crate::PluginBase>)>,
         }
 
         impl DefaultFactory {
@@ -63,8 +63,8 @@ macro_rules! plugin_main {
         impl std::default::Default for DefaultFactory {
             fn default() -> Self {
                 Self {
+                    context: None,
                     classes: std::vec![$(($class::INFO, $class::new)), *],
-                    context: None
                 }
             }
         }
@@ -74,11 +74,11 @@ macro_rules! plugin_main {
                 std::result::Result::Ok(&Self::INFO)
             }
 
-            fn count_classes(&self) -> std::result::Result<u32, $crate::ResultErr> {
-                std::result::Result::Ok(self.classes.len() as u32)
+            fn count_classes(&self) -> std::result::Result<usize, $crate::ResultErr> {
+                std::result::Result::Ok(self.classes.len())
             }
 
-            fn get_class_info(&self, index: u32) -> std::result::Result<&$crate::ClassInfo, $crate::ResultErr> {
+            fn get_class_info(&self, index: usize) -> std::result::Result<&$crate::ClassInfo, $crate::ResultErr> {
                 if index as usize >= self.classes.len() {
                     return std::result::Result::Err($crate::ResultErr::InvalidArgument);
                 }
@@ -86,9 +86,9 @@ macro_rules! plugin_main {
                 std::result::Result::Ok(&self.classes[index as usize].0)
             }
 
-            fn create_instance(&self, cid: $crate::UID) -> std::result::Result<std::boxed::Box<dyn $crate::PluginBase>, $crate::ResultErr> {
+            fn create_instance(&self, cid: &$crate::UID) -> std::result::Result<std::boxed::Box<dyn $crate::PluginBase>, $crate::ResultErr> {
                 for c in &self.classes {
-                    if cid == *c.0.get_cid() {
+                    if *cid == *c.0.get_cid() {
                         return std::result::Result::Ok(c.1());
                     }
                 }

@@ -5,8 +5,7 @@ use std::slice;
 use num_traits::Float;
 
 use vst3_sys::vst::ProcessModes::{kOffline, kPrefetch, kRealtime};
-use vst3_sys::vst::SymbolicSampleSizes::{kSample32, kSample64};
-use vst3_sys::vst::{AudioBusBuffers, IAudioProcessor};
+use vst3_sys::vst::{AudioBusBuffers, IAudioProcessor, SymbolicSampleSizes};
 
 use crate::ResultErr::{InvalidArgument, NotImplemented};
 use crate::ResultOk::ResOk;
@@ -20,11 +19,22 @@ pub enum SymbolicSampleSize {
     Sample64,
 }
 
+impl SymbolicSampleSize {
+    pub(crate) fn is_valid(size: i32) -> bool {
+        // todo: find better way to do this
+        if size != SymbolicSampleSizes::kSample32 as i32 && size != SymbolicSampleSizes::kSample64 as i32 {
+            false
+        } else {
+            true
+        }
+    }
+}
+
 impl From<i32> for SymbolicSampleSize {
     fn from(s: i32) -> Self {
         match s {
-            s if s == kSample32 as i32 => SymbolicSampleSize::Sample32,
-            s if s == kSample64 as i32 => SymbolicSampleSize::Sample64,
+            s if s == SymbolicSampleSizes::kSample32 as i32 => SymbolicSampleSize::Sample32,
+            s if s == SymbolicSampleSizes::kSample64 as i32 => SymbolicSampleSize::Sample64,
             _ => unreachable!(),
         }
     }
@@ -254,17 +264,17 @@ pub trait AudioProcessor: Component {
         inputs: &[u64],
         outputs: &[u64],
     ) -> Result<ResultOk, ResultErr>;
-    fn get_bus_arrangement(&self, dir: &BusDirection, index: i32) -> Result<u64, ResultErr>;
+    fn get_bus_arrangement(&self, dir: &BusDirection, index: usize) -> Result<u64, ResultErr>;
     fn can_process_sample_size(
         &self,
-        symbolic_sample_size: SymbolicSampleSize,
+        symbolic_sample_size: &SymbolicSampleSize,
     ) -> Result<ResultOk, ResultErr>;
-    fn get_latency_samples(&self) -> Result<u32, ResultErr>;
-    fn setup_processing(&self, setup: ProcessSetup) -> Result<ResultOk, ResultErr>;
-    fn set_processing(&self, state: bool) -> Result<ResultOk, ResultErr>;
+    fn get_latency_samples(&self) -> Result<usize, ResultErr>;
+    fn setup_processing(&mut self, setup: &ProcessSetup) -> Result<ResultOk, ResultErr>;
+    fn set_processing(&mut self, state: bool) -> Result<ResultOk, ResultErr>;
     fn process(&mut self, data: &mut ProcessData<f32>) -> Result<ResultOk, ResultErr>;
-    fn process_f64(&self, data: ProcessData<f64>) -> Result<ResultOk, ResultErr>;
-    fn get_tail_samples(&self) -> Result<u32, ResultErr>;
+    fn process_f64(&mut self, data: &mut ProcessData<f64>) -> Result<ResultOk, ResultErr>;
+    fn get_tail_samples(&self) -> Result<usize, ResultErr>;
 }
 
 impl IAudioProcessor for VST3Component {
@@ -276,6 +286,12 @@ impl IAudioProcessor for VST3Component {
         num_outs: i32,
     ) -> i32 {
         if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
+            if inputs.is_null() || outputs.is_null() {
+                return InvalidArgument.into()
+            }
+            if num_ins < 0 || num_outs < 0 {
+                return InvalidArgument.into()
+            }
             let inputs = slice::from_raw_parts(inputs, num_ins as usize);
             let outputs = slice::from_raw_parts(outputs, num_outs as usize);
             return match audio_processor.set_bus_arrangements(inputs, outputs) {
@@ -288,7 +304,16 @@ impl IAudioProcessor for VST3Component {
 
     unsafe fn get_bus_arrangement(&self, dir: i32, index: i32, arr: *mut u64) -> i32 {
         if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            return match audio_processor.get_bus_arrangement(&BusDirection::from(dir), index) {
+            if !BusDirection::is_valid(dir) {
+                return InvalidArgument.into()
+            }
+            if index < 0 {
+                return InvalidArgument.into()
+            }
+            if arr.is_null() {
+                return InvalidArgument.into()
+            }
+            return match audio_processor.get_bus_arrangement(&BusDirection::from(dir), index as usize) {
                 Ok(bus_arrangement) => {
                     *arr = bus_arrangement;
                     ResOk.into()
@@ -301,8 +326,11 @@ impl IAudioProcessor for VST3Component {
 
     unsafe fn can_process_sample_size(&self, symbolic_sample_size: i32) -> i32 {
         if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
+            if !SymbolicSampleSize::is_valid(symbolic_sample_size) {
+                return InvalidArgument.into()
+            }
             return match audio_processor
-                .can_process_sample_size(SymbolicSampleSize::from(symbolic_sample_size))
+                .can_process_sample_size(&SymbolicSampleSize::from(symbolic_sample_size))
             {
                 Ok(r) => r.into(),
                 Err(r) => r.into(),
@@ -314,16 +342,26 @@ impl IAudioProcessor for VST3Component {
     unsafe fn get_latency_samples(&self) -> u32 {
         if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             return match audio_processor.get_latency_samples() {
-                Ok(latency_samples) => latency_samples,
+                Ok(latency_samples) => {
+                    if latency_samples > u32::MAX as usize {
+                        log::trace!("get_latency_samples(): returned value is too big! {}usize > {}u32", latency_samples, u32::MAX);
+                        0
+                    } else {
+                        latency_samples as u32
+                    }
+                },
                 Err(_) => 0,
             };
         }
         0
     }
 
-    unsafe fn setup_processing(&self, setup: *mut vst3_sys::vst::ProcessSetup) -> i32 {
+    unsafe fn setup_processing(&self, setup: *const vst3_sys::vst::ProcessSetup) -> i32 {
         if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            return match audio_processor.setup_processing(ProcessSetup::from(*setup)) {
+            if setup.is_null() {
+                return InvalidArgument.into()
+            }
+            return match audio_processor.setup_processing(&ProcessSetup::from(*setup)) {
                 Ok(r) => r.into(),
                 Err(r) => r.into(),
             };
@@ -347,7 +385,6 @@ impl IAudioProcessor for VST3Component {
             if data.is_null() {
                 return InvalidArgument.into();
             }
-
             return match SymbolicSampleSize::from((*data).symbolic_sample_size) {
                 SymbolicSampleSize::Sample32 => {
                     let mut process_data = ProcessData::<f32>::from_raw(
@@ -369,7 +406,7 @@ impl IAudioProcessor for VST3Component {
                     }
                 }
                 SymbolicSampleSize::Sample64 => {
-                    let process_data = ProcessData::<f64>::from_raw(
+                    let mut process_data = ProcessData::<f64>::from_raw(
                         (*data).num_inputs as usize,
                         (*data).num_outputs as usize,
                         (*data).inputs as *const AudioBusBuffers,
@@ -382,7 +419,7 @@ impl IAudioProcessor for VST3Component {
                         (*data).output_events as *mut c_void,
                     );
 
-                    match audio_processor.process_f64(process_data) {
+                    match audio_processor.process_f64(&mut process_data) {
                         Ok(r) => r.into(),
                         Err(r) => r.into(),
                     }
@@ -395,7 +432,14 @@ impl IAudioProcessor for VST3Component {
     unsafe fn get_tail_samples(&self) -> u32 {
         if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
             return match audio_processor.get_tail_samples() {
-                Ok(tail_samples) => tail_samples,
+                Ok(tail_samples) => {
+                    if tail_samples > u32::MAX as usize {
+                        log::trace!("get_tail_samples(): returned value is too big! {}usize > {}u32", tail_samples, u32::MAX);
+                        0
+                    } else {
+                        tail_samples as u32
+                    }
+                },
                 Err(_) => 0,
             };
         }

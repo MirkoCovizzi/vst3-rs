@@ -16,7 +16,7 @@ pub struct ParameterInfo {
 }
 
 impl ParameterInfo {
-    pub fn get_parameter_info(&self) -> vst3_sys::vst::ParameterInfo {
+    pub fn get_info(&self) -> vst3_sys::vst::ParameterInfo {
         let mut p_info = vst3_sys::vst::ParameterInfo {
             id: self.id,
             title: [0; 128],
@@ -53,7 +53,7 @@ pub enum ParameterFlag {
 }
 
 pub struct ParameterInfoBuilder {
-    id: u32,
+    id: usize,
     title: String,
     short_title: Option<String>,
     units: Option<String>,
@@ -64,7 +64,7 @@ pub struct ParameterInfoBuilder {
 }
 
 impl ParameterInfoBuilder {
-    pub fn new(title: &str, id: u32) -> Self {
+    pub fn new(title: &str, id: usize) -> Self {
         Self {
             id,
             title: title.to_string(),
@@ -145,7 +145,7 @@ pub trait Parameter {
         };
     }
 
-    fn from_string(&self, string: String) -> Result<f64, ResultErr> {
+    fn from_string(&self, string: &str) -> Result<f64, ResultErr> {
         match string.parse::<f64>() {
             Ok(val) => Ok(val),
             Err(_) => Err(InvalidArgument),
@@ -220,7 +220,7 @@ impl Parameter for BaseParameter {
 
 pub struct ParameterContainer {
     params: Vec<Box<dyn Parameter>>,
-    id_to_index: HashMap<u32, usize>,
+    id_to_index: HashMap<usize, usize>,
 }
 
 impl ParameterContainer {
@@ -233,7 +233,7 @@ impl ParameterContainer {
 
     pub fn add_parameter(&mut self, p: Box<dyn Parameter>) {
         self.id_to_index
-            .insert(p.get_info().id as u32, self.params.len());
+            .insert(p.get_info().id as usize, self.params.len());
         self.params.push(p);
     }
 
@@ -250,14 +250,14 @@ impl ParameterContainer {
         self.id_to_index.clear();
     }
 
-    pub fn get_parameter(&self, tag: u32) -> Option<&Box<dyn Parameter>> {
+    pub fn get_parameter(&self, tag: usize) -> Option<&Box<dyn Parameter>> {
         match self.id_to_index.get(&tag) {
             Some(index) => self.params.get(*index),
             None => None,
         }
     }
 
-    pub fn get_parameter_mut(&mut self, tag: u32) -> Option<&mut Box<dyn Parameter>> {
+    pub fn get_parameter_mut(&mut self, tag: usize) -> Option<&mut Box<dyn Parameter>> {
         match self.id_to_index.get(&tag) {
             Some(index) => self.params.get_mut(*index),
             None => None,

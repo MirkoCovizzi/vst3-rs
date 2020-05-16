@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::os::raw::c_void;
 use std::ptr::null_mut;
 
+use vst3_com::sys::GUID;
 use vst3_com::IID;
 use vst3_sys::base::{
     IPluginFactory, IPluginFactory2, IPluginFactory3, PClassInfo, PClassInfo2, PClassInfoW,
@@ -10,7 +11,7 @@ use vst3_sys::base::{
 use vst3_sys::vst::kDefaultFactoryFlags;
 use vst3_sys::VST3;
 
-use crate::ResultErr::{InvalidArgument, NotImplemented, ResultFalse};
+use crate::ResultErr::{InvalidArgument, NotImplemented, ResultFalse, InternalError};
 use crate::ResultOk::ResOk;
 use crate::{
     strcpy, wstrcpy, AudioProcessor, ClassInfo, Component, EditController, HostApplication,
@@ -18,7 +19,6 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::sync::Mutex;
-use vst3_com::sys::GUID;
 
 pub struct FactoryInfo {
     pub vendor: &'static str,
@@ -55,9 +55,9 @@ pub trait PluginFactory {
     }
 
     fn get_factory_info(&self) -> Result<&FactoryInfo, ResultErr>;
-    fn count_classes(&self) -> Result<u32, ResultErr>;
-    fn get_class_info(&self, index: u32) -> Result<&ClassInfo, ResultErr>;
-    fn create_instance(&self, cid: UID) -> Result<Box<dyn PluginBase>, ResultErr>;
+    fn count_classes(&self) -> Result<usize, ResultErr>;
+    fn get_class_info(&self, index: usize) -> Result<&ClassInfo, ResultErr>;
+    fn create_instance(&self, cid: &UID) -> Result<Box<dyn PluginBase>, ResultErr>;
     fn set_host_context(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr>;
 }
 
@@ -74,15 +74,15 @@ impl PluginFactory for DummyFactory {
         unimplemented!()
     }
 
-    fn count_classes(&self) -> Result<u32, ResultErr> {
+    fn count_classes(&self) -> Result<usize, ResultErr> {
         unimplemented!()
     }
 
-    fn get_class_info(&self, _index: u32) -> Result<&ClassInfo, ResultErr> {
+    fn get_class_info(&self, _index: usize) -> Result<&ClassInfo, ResultErr> {
         unimplemented!()
     }
 
-    fn create_instance(&self, _cid: UID) -> Result<Box<dyn PluginBase>, ResultErr> {
+    fn create_instance(&self, _cid: &UID) -> Result<Box<dyn PluginBase>, ResultErr> {
         unimplemented!()
     }
 
@@ -108,7 +108,10 @@ impl VST3PluginFactory {
 
 impl IPluginFactory3 for VST3PluginFactory {
     unsafe fn get_class_info_unicode(&self, index: i32, info: *mut PClassInfoW) -> i32 {
-        match self.inner.lock().unwrap().get_class_info(index as u32) {
+        if index < 0 {
+            return InvalidArgument.into()
+        }
+        match self.inner.lock().unwrap().get_class_info(index as usize) {
             Ok(class_info) => {
                 *info = class_info.get_info_w();
                 ResOk.into()
@@ -130,7 +133,10 @@ impl IPluginFactory3 for VST3PluginFactory {
 
 impl IPluginFactory2 for VST3PluginFactory {
     unsafe fn get_class_info2(&self, index: i32, info: *mut PClassInfo2) -> i32 {
-        match self.inner.lock().unwrap().get_class_info(index as u32) {
+        if index < 0 {
+            return InvalidArgument.into()
+        }
+        match self.inner.lock().unwrap().get_class_info(index as usize) {
             Ok(class_info) => {
                 *info = class_info.get_info_2();
                 ResOk.into()
@@ -153,13 +159,23 @@ impl IPluginFactory for VST3PluginFactory {
 
     unsafe fn count_classes(&self) -> i32 {
         match self.inner.lock().unwrap().count_classes() {
-            Ok(count) => count as i32,
+            Ok(count) => {
+                if count > i32::MAX as usize {
+                    log::trace!("count_classes(): returned value is too big! {}usize > {}i32", count, i32::MAX);
+                    InternalError.into()
+                } else {
+                    count as i32
+                }
+            },
             Err(r) => 0,
         }
     }
 
     unsafe fn get_class_info(&self, index: i32, info: *mut PClassInfo) -> i32 {
-        match self.inner.lock().unwrap().get_class_info(index as u32) {
+        if index < 0 {
+            return InvalidArgument.into()
+        }
+        match self.inner.lock().unwrap().get_class_info(index as usize) {
             Ok(class_info) => {
                 *info = class_info.get_info();
                 ResOk.into()
@@ -171,11 +187,14 @@ impl IPluginFactory for VST3PluginFactory {
     unsafe fn create_instance(
         &self,
         cid: *const IID,
-        _iid: *const IID,
+        iid: *const IID,
         obj: *mut *mut c_void,
     ) -> i32 {
+        if cid.is_null() || iid.is_null() {
+            return InvalidArgument.into()
+        }
         let uid = UID::from_guid(&*cid as &GUID);
-        return match self.inner.lock().unwrap().create_instance(uid) {
+        return match self.inner.lock().unwrap().create_instance(&uid) {
             Ok(mut object) => {
                 if object.as_edit_controller().is_some() {
                     let mut edit_controller = VST3EditController::new();

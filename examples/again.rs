@@ -18,16 +18,16 @@ use vst3::{
     ROOT_UNIT_ID, STEREO, UID,
 };
 
-const GAIN_ID: u32 = 0;
-const VU_PPM: u32 = 1;
-const BYPASS_ID: u32 = 2;
+const GAIN_ID: usize = 0;
+const VU_PPM: usize = 1;
+const BYPASS_ID: usize = 2;
 
 struct GainParameter {
     inner: BaseParameter,
 }
 
 impl GainParameter {
-    fn new(flags: i32, id: u32) -> Box<Self> {
+    fn new(flags: i32, id: usize) -> Box<Self> {
         let info = ParameterInfoBuilder::new("Gain", id)
             .units("dB")
             .step_count(0)
@@ -82,7 +82,7 @@ impl Parameter for GainParameter {
         };
     }
 
-    fn from_string(&self, string: String) -> Result<f64, ResultErr> {
+    fn from_string(&self, string: &str) -> Result<f64, ResultErr> {
         match string.parse::<f64>() {
             Ok(mut val) => {
                 if val > 0.0 {
@@ -177,7 +177,7 @@ impl PluginBase for AGainEditController {
 }
 
 impl EditController for AGainEditController {
-    fn set_component_state(&mut self, state: Stream) -> Result<ResultOk, ResultErr> {
+    fn set_component_state(&mut self, state: &Stream) -> Result<ResultOk, ResultErr> {
         if let Ok(saved_gain) = state.read::<f64>() {
             self.set_param_normalized(GAIN_ID, saved_gain);
         } else {
@@ -195,20 +195,20 @@ impl EditController for AGainEditController {
         Ok(ResOk)
     }
 
-    fn set_state(&self, _state: Stream) -> Result<ResultOk, ResultErr> {
+    fn set_state(&mut self, _state: &Stream) -> Result<ResultOk, ResultErr> {
         Ok(ResOk)
     }
 
-    fn get_state(&self, _state: Stream) -> Result<ResultOk, ResultErr> {
+    fn get_state(&self, _state: &Stream) -> Result<ResultOk, ResultErr> {
         Ok(ResOk)
     }
 
-    fn get_parameter_count(&self) -> Result<i32, ResultErr> {
-        Ok(self.parameters.get_parameter_count() as i32)
+    fn get_parameter_count(&self) -> Result<usize, ResultErr> {
+        Ok(self.parameters.get_parameter_count())
     }
 
-    fn get_parameter_info(&self, param_index: i32) -> Result<&ParameterInfo, ResultErr> {
-        if let Some(param) = self.parameters.get_parameter_by_index(param_index as usize) {
+    fn get_parameter_info(&self, param_index: usize) -> Result<&ParameterInfo, ResultErr> {
+        if let Some(param) = self.parameters.get_parameter_by_index(param_index) {
             return Ok(param.get_info());
         }
         Err(ResultFalse)
@@ -216,7 +216,7 @@ impl EditController for AGainEditController {
 
     fn get_param_string_by_value(
         &self,
-        id: u32,
+        id: usize,
         value_normalized: f64,
     ) -> Result<String, ResultErr> {
         if let Some(param) = self.parameters.get_parameter(id) {
@@ -225,35 +225,35 @@ impl EditController for AGainEditController {
         Err(ResultFalse)
     }
 
-    fn get_param_value_by_string(&self, id: u32, string: String) -> Result<f64, ResultErr> {
+    fn get_param_value_by_string(&self, id: usize, string: &str) -> Result<f64, ResultErr> {
         if let Some(param) = self.parameters.get_parameter(id) {
             return param.from_string(string);
         }
         Err(ResultFalse)
     }
 
-    fn normalized_param_to_plain(&self, id: u32, value: f64) -> Result<f64, ResultErr> {
+    fn normalized_param_to_plain(&self, id: usize, value: f64) -> Result<f64, ResultErr> {
         if let Some(param) = self.parameters.get_parameter(id) {
             return Ok(param.to_plain(value));
         }
         Err(ResultFalse)
     }
 
-    fn plain_param_to_normalized(&self, id: u32, plain: f64) -> Result<f64, ResultErr> {
+    fn plain_param_to_normalized(&self, id: usize, plain: f64) -> Result<f64, ResultErr> {
         if let Some(param) = self.parameters.get_parameter(id) {
             return Ok(param.to_normalized(plain));
         }
         Err(ResultFalse)
     }
 
-    fn get_param_normalized(&self, id: u32) -> Result<f64, ResultErr> {
+    fn get_param_normalized(&self, id: usize) -> Result<f64, ResultErr> {
         if let Some(param) = self.parameters.get_parameter(id) {
             return Ok(param.get_normalized());
         }
         Err(ResultFalse)
     }
 
-    fn set_param_normalized(&mut self, id: u32, value: f64) -> Result<ResultOk, ResultErr> {
+    fn set_param_normalized(&mut self, id: usize, value: f64) -> Result<ResultOk, ResultErr> {
         if let Some(param) = self.parameters.get_parameter_mut(id) {
             param.set_normalized(value);
             return Ok(ResOk);
@@ -265,7 +265,7 @@ impl EditController for AGainEditController {
         Ok(ResOk)
     }
 
-    fn create_view(&self, _name: String) -> Result<Box<dyn PlugView>, ResultErr> {
+    fn create_view(&self, _name: &str) -> Result<Box<dyn PlugView>, ResultErr> {
         Err(ResultFalse)
     }
 }
@@ -412,34 +412,34 @@ impl PluginBase for AGainComponent {
 }
 
 impl Component for AGainComponent {
-    fn get_controller_class_id(&self) -> Result<UID, ResultErr> {
-        Ok(AGainEditController::UID)
+    fn get_controller_class_id(&self) -> Result<&UID, ResultErr> {
+        Ok(&AGainEditController::UID)
     }
 
-    fn set_io_mode(&self, _mode: IoMode) -> Result<ResultOk, ResultErr> {
+    fn set_io_mode(&self, _mode: &IoMode) -> Result<ResultOk, ResultErr> {
         Err(NotImplemented)
     }
 
-    fn get_bus_count(&self, type_: &MediaType, dir: &BusDirection) -> Result<i32, ResultErr> {
-        let bus_list = self.get_bus_vec(type_, dir);
-        Ok(bus_list.get_vec().len() as i32)
+    fn get_bus_count(&self, media_type: &MediaType, dir: &BusDirection) -> Result<usize, ResultErr> {
+        let bus_list = self.get_bus_vec(media_type, dir);
+        Ok(bus_list.get_vec().len())
     }
 
     fn get_bus_info(
         &self,
         type_: &MediaType,
         dir: &BusDirection,
-        index: i32,
+        index: usize,
     ) -> Result<BusInfo, ResultErr> {
         if index < 0 {
             return Err(InvalidArgument);
         }
         let mut bus_list = self.get_bus_vec(type_, dir);
-        if index >= bus_list.get_vec().len() as i32 {
+        if index >= bus_list.get_vec().len() {
             return Err(InvalidArgument);
         }
 
-        let bus = &bus_list.get_vec()[index as usize];
+        let bus = &bus_list.get_vec()[index];
         let mut bus_info = BusInfo {
             media_type: type_.clone(),
             direction: dir.clone(),
@@ -454,26 +454,26 @@ impl Component for AGainComponent {
         Ok(bus_info)
     }
 
-    fn get_routing_info(&self) -> Result<(RoutingInfo, RoutingInfo), ResultErr> {
+    fn get_routing_info(&self) -> Result<(&RoutingInfo, &RoutingInfo), ResultErr> {
         Err(NotImplemented)
     }
 
     fn activate_bus(
         &mut self,
-        type_: &MediaType,
+        media_type: &MediaType,
         dir: &BusDirection,
-        index: i32,
+        index: usize,
         state: bool,
     ) -> Result<ResultOk, ResultErr> {
         if index < 0 {
             return Err(InvalidArgument);
         }
-        let mut bus_list = self.get_bus_vec_mut(type_, dir);
-        if index >= bus_list.get_vec().len() as i32 {
+        let mut bus_list = self.get_bus_vec_mut(media_type, dir);
+        if index >= bus_list.get_vec().len() {
             return Err(InvalidArgument);
         }
 
-        let mut bus = &mut bus_list.get_vec_mut()[index as usize];
+        let mut bus = &mut bus_list.get_vec_mut()[index];
         bus.set_active(state);
 
         Ok(ResOk)
@@ -483,7 +483,7 @@ impl Component for AGainComponent {
         Ok(ResOk)
     }
 
-    fn set_state(&mut self, state: Stream) -> Result<ResultOk, ResultErr> {
+    fn set_state(&mut self, state: &Stream) -> Result<ResultOk, ResultErr> {
         self.gain = state.read::<f64>()?;
         self.gain_reduction = state.read::<f64>()?;
         self.bypass = state.read::<bool>()?;
@@ -491,7 +491,7 @@ impl Component for AGainComponent {
         Ok(ResOk)
     }
 
-    fn get_state(&self, state: Stream) -> Result<ResultOk, ResultErr> {
+    fn get_state(&self, state: &Stream) -> Result<ResultOk, ResultErr> {
         state.write::<f64>(self.gain);
         state.write::<f64>(self.gain_reduction);
         state.write::<bool>(self.bypass);
@@ -536,19 +536,19 @@ impl AudioProcessor for AGainComponent {
         Err(ResultFalse)
     }
 
-    fn get_bus_arrangement(&self, dir: &BusDirection, index: i32) -> Result<u64, ResultErr> {
+    fn get_bus_arrangement(&self, dir: &BusDirection, index: usize) -> Result<u64, ResultErr> {
         let bus_vec = self.get_bus_vec(&Audio, dir);
-        if index < 0 || bus_vec.get_vec().len() <= index as usize {
+        if index >= bus_vec.get_vec().len() {
             return Err(InvalidArgument);
         }
 
-        let audio_bus = bus_vec.get_vec()[index as usize].as_audio_bus().unwrap();
+        let audio_bus = bus_vec.get_vec()[index].as_audio_bus().unwrap();
         Ok(audio_bus.get_speaker_arrangement())
     }
 
     fn can_process_sample_size(
         &self,
-        symbolic_sample_size: SymbolicSampleSize,
+        symbolic_sample_size: &SymbolicSampleSize,
     ) -> Result<ResultOk, ResultErr> {
         match symbolic_sample_size {
             SymbolicSampleSize::Sample32 => Ok(ResOk),
@@ -556,15 +556,15 @@ impl AudioProcessor for AGainComponent {
         }
     }
 
-    fn get_latency_samples(&self) -> Result<u32, ResultErr> {
+    fn get_latency_samples(&self) -> Result<usize, ResultErr> {
         Ok(0)
     }
 
-    fn setup_processing(&self, _setup: ProcessSetup) -> Result<ResultOk, ResultErr> {
+    fn setup_processing(&mut self, _setup: &ProcessSetup) -> Result<ResultOk, ResultErr> {
         Ok(ResOk)
     }
 
-    fn set_processing(&self, _state: bool) -> Result<ResultOk, ResultErr> {
+    fn set_processing(&mut self, _state: bool) -> Result<ResultOk, ResultErr> {
         Ok(ResOk)
     }
 
@@ -621,11 +621,11 @@ impl AudioProcessor for AGainComponent {
         Ok(ResOk)
     }
 
-    fn process_f64(&self, _data: ProcessData<f64>) -> Result<ResultOk, ResultErr> {
+    fn process_f64(&mut self, _data: &mut ProcessData<f64>) -> Result<ResultOk, ResultErr> {
         Err(NotImplemented)
     }
 
-    fn get_tail_samples(&self) -> Result<u32, ResultErr> {
+    fn get_tail_samples(&self) -> Result<usize, ResultErr> {
         Ok(0)
     }
 }

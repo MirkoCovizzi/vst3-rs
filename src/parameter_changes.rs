@@ -40,12 +40,16 @@ impl ParameterChanges {
         ParamValueQueue::from_raw(ptr)
     }
 
-    pub fn add_parameter_data(&self, id: &u32, index: &mut usize) -> Option<ParamValueQueue> {
+    pub fn add_parameter_data(&self, id: &usize, index: &mut usize) -> Option<ParamValueQueue> {
+        if *id > u32::MAX as usize {
+            log::trace!("ParameterChanges::add_parameter_data(): value is too big! {}usize > {}u32", *id, u32::MAX);
+            return None
+        }
         let mut ptr;
         unsafe {
             ptr = self
                 .inner
-                .add_parameter_data(id as *const u32, index as *mut usize as *mut i32);
+                .add_parameter_data(id as *const usize as *const u32, index as *mut usize as *mut i32);
         }
         ParamValueQueue::from_raw(ptr)
     }
@@ -73,8 +77,8 @@ impl ParamValueQueue {
         }
     }
 
-    pub fn get_parameter_id(&self) -> u32 {
-        unsafe { self.inner.get_parameter_id() as u32 }
+    pub fn get_parameter_id(&self) -> usize {
+        unsafe { self.inner.get_parameter_id() as usize }
     }
 
     pub fn get_point_count(&self) -> i32 {
