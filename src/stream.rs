@@ -42,7 +42,7 @@ impl Unknown for Stream {
 }
 
 impl Stream {
-    pub fn read<T>(&self) -> Result<T, ResultErr> {
+    pub fn read<T>(&self) -> Option<T> {
         let mut num_bytes_read = 0;
         let mut saved_value: T = unsafe { std::mem::zeroed() };
         let value_ptr = &mut saved_value as *mut T as *mut c_void;
@@ -52,13 +52,13 @@ impl Stream {
                 std::mem::size_of::<T>() as i32,
                 &mut num_bytes_read,
             ) {
-                r if r == ResOk.into() => return Ok(saved_value),
-                r => Err(ResultErr::from(r)),
+                r if r == ResOk.into() => return Some(saved_value),
+                r => None,
             }
         }
     }
 
-    pub fn write<T>(&self, value: T) -> Result<ResultOk, ResultErr> {
+    pub fn write<T>(&self, value: T) -> bool {
         let mut num_bytes_written = 0;
         let value_ptr = &value as *const T as *const c_void;
         unsafe {
@@ -67,21 +67,21 @@ impl Stream {
                 std::mem::size_of::<T>() as i32,
                 &mut num_bytes_written,
             ) {
-                r if r == ResOk.into() => Ok(ResOk),
-                r => Err(ResultErr::from(r)),
+                r if r == ResOk.into() => true,
+                r => false,
             }
         }
     }
 
-    pub fn seek<T>(&self, mode: SeekMode) -> Result<ResultOk, ResultErr> {
+    pub fn seek<T>(&self, mode: SeekMode) -> bool {
         let mut result = 0i64;
         unsafe {
             match self
                 .inner
                 .seek(std::mem::size_of::<T>() as i64, mode.into(), &mut result)
             {
-                r if r == ResOk.into() => Ok(ResOk),
-                r => Err(ResultErr::from(r)),
+                r if r == ResOk.into() => true,
+                r => false,
             }
         }
     }

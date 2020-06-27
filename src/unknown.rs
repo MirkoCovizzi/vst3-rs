@@ -21,19 +21,6 @@ impl From<ResultOk> for i32 {
     }
 }
 
-impl From<i32> for ResultOk {
-    fn from(result: i32) -> Self {
-        match result {
-            r if r == vst3_sys::base::kResultOk => ResultOk::ResOk,
-            r if r == vst3_sys::base::kResultTrue => ResultOk::ResTrue,
-            _ => {
-                log::trace!("Unreachable ResultOk! {}", result);
-                ResultOk::ResOk
-            }
-        }
-    }
-}
-
 pub enum ResultErr {
     NoInterface,
     ResultFalse,
@@ -58,6 +45,7 @@ impl From<ResultErr> for i32 {
     }
 }
 
+// todo: delete this!
 impl From<i32> for ResultErr {
     fn from(result: i32) -> Self {
         match result {

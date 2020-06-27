@@ -11,7 +11,7 @@ use vst3_sys::base::{
 use vst3_sys::vst::kDefaultFactoryFlags;
 use vst3_sys::VST3;
 
-use crate::ResultErr::{InvalidArgument, NotImplemented, ResultFalse, InternalError};
+use crate::ResultErr::{InternalError, InvalidArgument, NotImplemented, ResultFalse};
 use crate::ResultOk::ResOk;
 use crate::{
     strcpy, wstrcpy, AudioProcessor, ClassInfo, Component, EditController, HostApplication,
@@ -109,7 +109,7 @@ impl VST3PluginFactory {
 impl IPluginFactory3 for VST3PluginFactory {
     unsafe fn get_class_info_unicode(&self, index: i32, info: *mut PClassInfoW) -> i32 {
         if index < 0 {
-            return InvalidArgument.into()
+            return InvalidArgument.into();
         }
         match self.inner.lock().unwrap().get_class_info(index as usize) {
             Ok(class_info) => {
@@ -134,7 +134,7 @@ impl IPluginFactory3 for VST3PluginFactory {
 impl IPluginFactory2 for VST3PluginFactory {
     unsafe fn get_class_info2(&self, index: i32, info: *mut PClassInfo2) -> i32 {
         if index < 0 {
-            return InvalidArgument.into()
+            return InvalidArgument.into();
         }
         match self.inner.lock().unwrap().get_class_info(index as usize) {
             Ok(class_info) => {
@@ -161,19 +161,23 @@ impl IPluginFactory for VST3PluginFactory {
         match self.inner.lock().unwrap().count_classes() {
             Ok(count) => {
                 if count > i32::MAX as usize {
-                    log::trace!("count_classes(): returned value is too big! {}usize > {}i32", count, i32::MAX);
+                    log::trace!(
+                        "count_classes(): returned value is too big! {}usize > {}i32",
+                        count,
+                        i32::MAX
+                    );
                     InternalError.into()
                 } else {
                     count as i32
                 }
-            },
+            }
             Err(r) => 0,
         }
     }
 
     unsafe fn get_class_info(&self, index: i32, info: *mut PClassInfo) -> i32 {
         if index < 0 {
-            return InvalidArgument.into()
+            return InvalidArgument.into();
         }
         match self.inner.lock().unwrap().get_class_info(index as usize) {
             Ok(class_info) => {
@@ -191,7 +195,7 @@ impl IPluginFactory for VST3PluginFactory {
         obj: *mut *mut c_void,
     ) -> i32 {
         if cid.is_null() || iid.is_null() {
-            return InvalidArgument.into()
+            return InvalidArgument.into();
         }
         let uid = UID::from_guid(&*cid as &GUID);
         return match self.inner.lock().unwrap().create_instance(&uid) {

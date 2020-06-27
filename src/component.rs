@@ -2,6 +2,7 @@ use std::os::raw::c_void;
 use std::ptr::null_mut;
 use std::slice;
 
+use vst3_com::ProductionComInterface;
 use vst3_com::IID;
 use vst3_sys::base::IPluginBase;
 use vst3_sys::vst::{
@@ -9,13 +10,15 @@ use vst3_sys::vst::{
 };
 use vst3_sys::VST3;
 
-use crate::ResultErr::{InvalidArgument, NotImplemented, ResultFalse, InternalError};
+use crate::ResultErr::{InternalError, InvalidArgument, NotImplemented, ResultFalse};
 use crate::ResultOk::ResOk;
 use crate::{
-    wstrcpy, AudioProcessor, ClassInfo, HostApplication, PluginBase, ProcessData, ProcessMode,
-    ProcessSetup, ResultErr, ResultOk, Stream, SymbolicSampleSize, Unknown, UID,
+    register_panic_msg, wstrcpy, AudioProcessor, ClassInfo, HostApplication, PluginBase,
+    ProcessData, ProcessMode, ProcessSetup, ResultErr, ResultOk, Stream, SymbolicSampleSize,
+    Unknown, UID,
 };
-use std::sync::Mutex;
+use std::panic::{RefUnwindSafe, UnwindSafe};
+use std::sync::{Arc, Mutex};
 
 pub enum IoMode {
     Simple,
@@ -26,7 +29,10 @@ pub enum IoMode {
 impl IoMode {
     pub(crate) fn is_valid(mode: i32) -> bool {
         // todo: find better way to do this
-        if mode != IoModes::kSimple as i32 && mode != IoModes::kAdvanced as i32 && mode != IoModes::kOfflineProcessing as i32 {
+        if mode != IoModes::kSimple as i32
+            && mode != IoModes::kAdvanced as i32
+            && mode != IoModes::kOfflineProcessing as i32
+        {
             false
         } else {
             true
@@ -55,7 +61,10 @@ pub enum MediaType {
 impl MediaType {
     pub(crate) fn is_valid(t: i32) -> bool {
         // todo: find better way to do this
-        if t != MediaTypes::kAudio as i32 && t != MediaTypes::kEvent as i32 && t != MediaTypes::kNumMediaTypes as i32 {
+        if t != MediaTypes::kAudio as i32
+            && t != MediaTypes::kEvent as i32
+            && t != MediaTypes::kNumMediaTypes as i32
+        {
             false
         } else {
             true
@@ -131,7 +140,7 @@ impl From<i32> for BusType {
         match bus_type {
             t if t == BusTypes::kMain as i32 => BusType::Main,
             t if t == BusTypes::kAux as i32 => BusType::Aux,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -184,32 +193,32 @@ impl RoutingInfo {
         vst3_sys::vst::RoutingInfo {
             media_type: self.media_type.clone().into(),
             bus_index: self.bus_index,
-            channel: self.channel
+            channel: self.channel,
         }
     }
 }
 
 pub trait Component: PluginBase {
-    fn get_controller_class_id(&self) -> Result<&UID, ResultErr>;
-    fn set_io_mode(&self, mode: &IoMode) -> Result<ResultOk, ResultErr>;
-    fn get_bus_count(&self, media_type: &MediaType, dir: &BusDirection) -> Result<usize, ResultErr>;
+    fn get_controller_class_id(&self) -> Option<&UID>;
+    fn set_io_mode(&self, mode: &IoMode) -> bool;
+    fn get_bus_count(&self, media_type: &MediaType, dir: &BusDirection) -> usize;
     fn get_bus_info(
         &self,
         media_type: &MediaType,
         dir: &BusDirection,
         index: usize,
-    ) -> Result<BusInfo, ResultErr>;
-    fn get_routing_info(&self) -> Result<(&RoutingInfo, &RoutingInfo), ResultErr>;
+    ) -> Option<BusInfo>;
+    fn get_routing_info(&self) -> Option<(&RoutingInfo, &RoutingInfo)>;
     fn activate_bus(
         &mut self,
         media_type: &MediaType,
         dir: &BusDirection,
         index: usize,
         state: bool,
-    ) -> Result<ResultOk, ResultErr>;
-    fn set_active(&self, state: bool) -> Result<ResultOk, ResultErr>;
-    fn set_state(&mut self, state: &Stream) -> Result<ResultOk, ResultErr>;
-    fn get_state(&self, state: &Stream) -> Result<ResultOk, ResultErr>;
+    ) -> bool;
+    fn set_active(&self, state: bool) -> bool;
+    fn set_state(&mut self, state: &Stream) -> bool;
+    fn get_state(&self, state: &Stream) -> bool;
 }
 
 struct DummyComponent {}
@@ -221,29 +230,25 @@ impl Default for DummyComponent {
 }
 
 impl PluginBase for DummyComponent {
-    fn initialize(&mut self, _context: HostApplication) -> Result<ResultOk, ResultErr> {
+    fn initialize(&mut self, _context: HostApplication) -> bool {
         unimplemented!()
     }
 
-    fn terminate(&mut self) -> Result<ResultOk, ResultErr> {
+    fn terminate(&mut self) -> bool {
         unimplemented!()
     }
 }
 
 impl Component for DummyComponent {
-    fn get_controller_class_id(&self) -> Result<&UID, ResultErr> {
+    fn get_controller_class_id(&self) -> Option<&UID> {
         unimplemented!()
     }
 
-    fn set_io_mode(&self, _mode: &IoMode) -> Result<ResultOk, ResultErr> {
+    fn set_io_mode(&self, _mode: &IoMode) -> bool {
         unimplemented!()
     }
 
-    fn get_bus_count(
-        &self,
-        _media_type: &MediaType,
-        _dir: &BusDirection,
-    ) -> Result<usize, ResultErr> {
+    fn get_bus_count(&self, _media_type: &MediaType, _dir: &BusDirection) -> usize {
         unimplemented!()
     }
 
@@ -252,11 +257,11 @@ impl Component for DummyComponent {
         _media_type: &MediaType,
         _dir: &BusDirection,
         _index: usize,
-    ) -> Result<BusInfo, ResultErr> {
+    ) -> Option<BusInfo> {
         unimplemented!()
     }
 
-    fn get_routing_info(&self) -> Result<(&RoutingInfo, &RoutingInfo), ResultErr> {
+    fn get_routing_info(&self) -> Option<(&RoutingInfo, &RoutingInfo)> {
         unimplemented!()
     }
 
@@ -266,19 +271,19 @@ impl Component for DummyComponent {
         _dir: &BusDirection,
         _index: usize,
         _state: bool,
-    ) -> Result<ResultOk, ResultErr> {
+    ) -> bool {
         unimplemented!()
     }
 
-    fn set_active(&self, _state: bool) -> Result<ResultOk, ResultErr> {
+    fn set_active(&self, _state: bool) -> bool {
         unimplemented!()
     }
 
-    fn set_state(&mut self, _state: &Stream) -> Result<ResultOk, ResultErr> {
+    fn set_state(&mut self, _state: &Stream) -> bool {
         unimplemented!()
     }
 
-    fn get_state(&self, _state: &Stream) -> Result<ResultOk, ResultErr> {
+    fn get_state(&self, _state: &Stream) -> bool {
         unimplemented!()
     }
 }
@@ -304,71 +309,142 @@ impl VST3Component {
 
 impl IPluginBase for VST3Component {
     unsafe fn initialize(&self, context: *mut c_void) -> i32 {
-        if let Some(context) = HostApplication::from_raw(context) {
-            return match self.get_plugin_base().lock().unwrap().initialize(*context) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        let mutex_plugin_base = self.get_plugin_base();
+        // Creating a return value wrapped in a Mutex for the catch_unwind closure
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            // Checking to see if plugin_base has been poisoned or not
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                // Checking to see if context is valid or not (i.e. it's a null pointer)
+                if let Some(context) = HostApplication::from_raw(context) {
+                    // If initialize returns true, return kOk to Host, else return kResultFalse
+                    return if plugin_base.initialize(*context) {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                // Return kInvalidArgument to inform the Host that the pointer to context is null
+                return *ret.lock().unwrap() = InvalidArgument.into();
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                register_panic_msg("VST3Component: initialize: panic");
+                *ret.lock().unwrap()
+            }
         }
-        InvalidArgument.into()
     }
 
     unsafe fn terminate(&self) -> i32 {
-        match self.get_plugin_base().lock().unwrap().terminate() {
-            Ok(r) => r.into(),
-            Err(r) => r.into(),
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                return if plugin_base.terminate() {
+                    *ret.lock().unwrap() = ResOk.into()
+                } else {
+                    *ret.lock().unwrap() = ResultFalse.into()
+                };
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: terminate: panic");
+                *ret.lock().unwrap()
+            }
         }
     }
 }
 
 impl IComponent for VST3Component {
     unsafe fn get_controller_class_id(&self, tuid: *mut IID) -> i32 {
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            return match component.get_controller_class_id() {
-                Ok(controller_class_id) => {
-                    *tuid = controller_class_id.to_guid();
-                    ResOk.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    return match component.get_controller_class_id() {
+                        Some(controller_class_id) => {
+                            *tuid = controller_class_id.to_guid();
+                            *ret.lock().unwrap() = ResOk.into()
+                        }
+                        None => *ret.lock().unwrap() = ResultFalse.into(),
+                    };
                 }
-                Err(result) => result.into(),
-            };
+                return *ret.lock().unwrap() = NotImplemented.into();
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: get_controller_class_id: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn set_io_mode(&self, mode: i32) -> i32 {
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            if !IoMode::is_valid(mode) {
-                return InvalidArgument.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    if !IoMode::is_valid(mode) {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
+                    }
+                    return if component.set_io_mode(&IoMode::from(mode)) {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
             }
-            return match component.set_io_mode(&IoMode::from(mode)) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: set_io_mode: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn get_bus_count(&self, type_: i32, dir: i32) -> i32 {
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            if !MediaType::is_valid(type_) {
-                return InvalidArgument.into()
-            }
-            if !BusDirection::is_valid(dir) {
-                return InvalidArgument.into()
-            }
-            return match component.get_bus_count(&MediaType::from(type_), &BusDirection::from(dir))
-            {
-                Ok(bus_count) => {
-                    if bus_count > i32::MAX as usize {
-                        InternalError.into()
-                    } else {
-                        bus_count as i32
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(0);
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    if !MediaType::is_valid(type_) || !BusDirection::is_valid(dir) {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
                     }
-                },
-                Err(_) => 0,
-            };
+                    let count =
+                        component.get_bus_count(&MediaType::from(type_), &BusDirection::from(dir));
+                    if count > i32::MAX as usize {
+                        #[cfg(debug_assertions)]
+                        log::error!(
+                            "VST3Component: get_bus_count: returned value is too big! \
+                                    {}usize > {}i32",
+                            count,
+                            i32::MAX
+                        );
+                        return;
+                    } else {
+                        return *ret.lock().unwrap() = count as i32;
+                    }
+                }
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: get_bus_count: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn get_bus_info(
@@ -378,29 +454,36 @@ impl IComponent for VST3Component {
         index: i32,
         info: *mut vst3_sys::vst::BusInfo,
     ) -> i32 {
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            if !MediaType::is_valid(type_) {
-                return InvalidArgument.into()
-            }
-            if !BusDirection::is_valid(dir) {
-                return InvalidArgument.into()
-            }
-            if index < 0 {
-                return InvalidArgument.into()
-            }
-            return match component.get_bus_info(
-                &MediaType::from(type_),
-                &BusDirection::from(dir),
-                index as usize,
-            ) {
-                Ok(bus_info) => {
-                    *info = bus_info.get_info();
-                    ResOk.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    if !MediaType::is_valid(type_) || !BusDirection::is_valid(dir) || index < 0 {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
+                    }
+                    return match component.get_bus_info(
+                        &MediaType::from(type_),
+                        &BusDirection::from(dir),
+                        index as usize,
+                    ) {
+                        Some(bus_info) => {
+                            *info = bus_info.get_info();
+                            *ret.lock().unwrap() = ResOk.into()
+                        }
+                        None => *ret.lock().unwrap() = ResultFalse.into(),
+                    };
                 }
-                Err(r) => r.into(),
-            };
+                return *ret.lock().unwrap() = NotImplemented.into();
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: get_bus_info: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn get_routing_info(
@@ -408,78 +491,141 @@ impl IComponent for VST3Component {
         in_info: *mut vst3_sys::vst::RoutingInfo,
         out_info: *mut vst3_sys::vst::RoutingInfo,
     ) -> i32 {
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            return match component.get_routing_info() {
-                Ok(routing_info) => {
-                    *in_info = routing_info.0.get_info();
-                    *out_info = routing_info.1.get_info();
-                    ResOk.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    return match component.get_routing_info() {
+                        Some(routing_info) => {
+                            *in_info = routing_info.0.get_info();
+                            *out_info = routing_info.1.get_info();
+                            *ret.lock().unwrap() = ResOk.into()
+                        }
+                        None => *ret.lock().unwrap() = ResultFalse.into(),
+                    };
                 }
-                Err(r) => r.into(),
-            };
+                return *ret.lock().unwrap() = NotImplemented.into();
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: get_routing_info: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn activate_bus(&self, type_: i32, dir: i32, index: i32, state: u8) -> i32 {
-        let state = if state != 0 { true } else { false };
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            if !MediaType::is_valid(type_) {
-                return InvalidArgument.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    if !MediaType::is_valid(type_) || !BusDirection::is_valid(dir) || index < 0 {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
+                    }
+                    let state = if state != 0 { true } else { false };
+                    return if component.activate_bus(
+                        &MediaType::from(type_),
+                        &BusDirection::from(dir),
+                        index as usize,
+                        state,
+                    ) {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
             }
-            if !BusDirection::is_valid(dir) {
-                return InvalidArgument.into()
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: activate_bus: panic");
+                *ret.lock().unwrap()
             }
-            if index < 0 {
-                return InvalidArgument.into()
-            }
-            return match component.activate_bus(
-                &MediaType::from(type_),
-                &BusDirection::from(dir),
-                index as usize,
-                state,
-            ) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
         }
-        NotImplemented.into()
     }
 
     unsafe fn set_active(&self, state: u8) -> i32 {
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            let state = if state != 0 { true } else { false };
-            return match component.set_active(state) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    let state = if state != 0 { true } else { false };
+                    return if component.set_active(state) {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: set_active: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn set_state(&self, state: *mut c_void) -> i32 {
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            if let Some(state) = Stream::from_raw(state) {
-                return match component.set_state(&*state) {
-                    Ok(r) => r.into(),
-                    Err(r) => r.into(),
-                };
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    if let Some(state) = Stream::from_raw(state) {
+                        return if component.set_state(&*state) {
+                            *ret.lock().unwrap() = ResOk.into()
+                        } else {
+                            *ret.lock().unwrap() = ResultFalse.into()
+                        };
+                    }
+                    return *ret.lock().unwrap() = InvalidArgument.into();
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
             }
-            return InvalidArgument.into();
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: set_state: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn get_state(&self, state: *mut c_void) -> i32 {
-        if let Some(component) = self.get_plugin_base().lock().unwrap().as_component() {
-            if let Some(state) = Stream::from_raw(state) {
-                return match component.get_state(&*state) {
-                    Ok(r) => r.into(),
-                    Err(r) => r.into(),
-                };
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(component) = plugin_base.as_component() {
+                    if let Some(state) = Stream::from_raw(state) {
+                        return if component.get_state(&*state) {
+                            *ret.lock().unwrap() = ResOk.into()
+                        } else {
+                            *ret.lock().unwrap() = ResultFalse.into()
+                        };
+                    }
+                    return *ret.lock().unwrap() = InvalidArgument.into();
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
             }
-            return InvalidArgument.into();
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: get_state: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 }

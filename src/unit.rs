@@ -54,11 +54,11 @@ impl UnitBuilder {
         self
     }
 
-    pub fn build(&self) -> Unit {
+    pub fn build(self) -> Unit {
         Unit {
             id: self.id,
             parent_unit_id: self.parent_unit_id,
-            name: self.name.clone(),
+            name: self.name,
             program_list_id: self.program_list_id,
         }
     }

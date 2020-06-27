@@ -6,6 +6,7 @@ pub trait Bus {
     fn set_name(&mut self, new_name: &str);
     fn set_bus_type(&mut self, new_bus_type: BusType);
     fn set_flags(&mut self, new_flags: i32);
+    // todo: change this! It's a pretty bad design to send a &mut and modify it!
     fn get_info(&self, info: &mut BusInfo);
     fn as_audio_bus(&self) -> Option<&dyn AudioBus> {
         None

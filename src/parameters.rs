@@ -107,12 +107,12 @@ impl ParameterInfoBuilder {
         self
     }
 
-    pub fn build(&self) -> ParameterInfo {
+    pub fn build(self) -> ParameterInfo {
         let mut info = ParameterInfo {
             id: self.id as i32,
-            title: self.title.clone(),
-            short_title: self.short_title.clone(),
-            units: self.units.clone(),
+            title: self.title,
+            short_title: self.short_title,
+            units: self.units,
             step_count: self.step_count,
             default_normalized_value: self.default_normalized_value,
             unit_id: self.unit_id,

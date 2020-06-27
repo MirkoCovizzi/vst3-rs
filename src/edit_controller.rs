@@ -3,7 +3,7 @@ use std::os::raw::{c_char, c_void};
 use std::ptr::null_mut;
 use std::slice;
 use std::sync::Mutex;
-use widestring::{U16CString, U16CStr};
+use widestring::{U16CStr, U16CString};
 
 use vst3_com::ComPtr;
 use vst3_sys::base::IPluginBase;
@@ -13,11 +13,11 @@ use vst3_sys::VST3;
 use crate::plug_view::{PlugView, VST3PlugView};
 use crate::unknown::ResultErr::ResultFalse;
 use crate::unknown::{ResultErr, Unknown};
-use crate::ResultErr::{InvalidArgument, NotImplemented, InternalError};
+use crate::ResultErr::{InternalError, InvalidArgument, NotImplemented};
 use crate::ResultOk::ResOk;
 use crate::{
-    wstrcpy, ClassInfo, ClassInfoBuilder, HostApplication, ParameterInfo, PluginBase, ResultOk,
-    Stream, UnitInfo, UID,
+    wstrcpy, ClassInfo, ClassInfoBuilder, HostApplication, ParameterInfo,
+    PluginBase, ResultOk, Stream, UnitInfo, UID,
 };
 
 pub struct ComponentHandler {
@@ -83,18 +83,14 @@ pub trait EditController: PluginBase {
     fn get_state(&self, state: &Stream) -> Result<ResultOk, ResultErr>;
     fn get_parameter_count(&self) -> Result<usize, ResultErr>;
     fn get_parameter_info(&self, index: usize) -> Result<&ParameterInfo, ResultErr>;
-    fn get_param_string_by_value(
-        &self,
-        id: usize,
-        value: f64,
-    ) -> Result<String, ResultErr>;
+    fn get_param_string_by_value(&self, id: usize, value: f64) -> Result<String, ResultErr>;
     fn get_param_value_by_string(&self, id: usize, string: &str) -> Result<f64, ResultErr>;
     fn normalized_param_to_plain(&self, id: usize, value: f64) -> Result<f64, ResultErr>;
     fn plain_param_to_normalized(&self, id: usize, value: f64) -> Result<f64, ResultErr>;
     fn get_param_normalized(&self, id: usize) -> Result<f64, ResultErr>;
     fn set_param_normalized(&mut self, id: usize, value: f64) -> Result<ResultOk, ResultErr>;
     fn set_component_handler(&self, handler: ComponentHandler) -> Result<ResultOk, ResultErr>;
-    fn create_view(&self, name: &str) -> Result<Box<dyn PlugView>, ResultErr>;
+    fn create_view(&mut self) -> Result<&mut Box<dyn PlugView>, ResultErr>;
 }
 
 struct DummyEditController {}
@@ -106,11 +102,11 @@ impl Default for DummyEditController {
 }
 
 impl PluginBase for DummyEditController {
-    fn initialize(&mut self, _context: HostApplication) -> Result<ResultOk, ResultErr> {
+    fn initialize(&mut self, _context: HostApplication) -> bool {
         unimplemented!()
     }
 
-    fn terminate(&mut self) -> Result<ResultOk, ResultErr> {
+    fn terminate(&mut self) -> bool {
         unimplemented!()
     }
 }
@@ -168,7 +164,7 @@ impl EditController for DummyEditController {
         unimplemented!()
     }
 
-    fn create_view(&self, _name: &str) -> Result<Box<dyn PlugView>, ResultErr> {
+    fn create_view(&mut self) -> Result<&mut Box<dyn PlugView>, ResultErr> {
         unimplemented!()
     }
 }
@@ -194,19 +190,47 @@ impl VST3EditController {
 
 impl IPluginBase for VST3EditController {
     unsafe fn initialize(&self, context: *mut c_void) -> i32 {
-        if let Some(context) = HostApplication::from_raw(context) {
-            return match self.get_plugin_base().lock().unwrap().initialize(*context) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(context) = HostApplication::from_raw(context) {
+                    return if plugin_base.initialize(*context) {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                return *ret.lock().unwrap() = InvalidArgument.into();
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3EditController: initialize: panic");
+                *ret.lock().unwrap()
+            }
         }
-        InvalidArgument.into()
     }
 
     unsafe fn terminate(&self) -> i32 {
-        match self.get_plugin_base().lock().unwrap().terminate() {
-            Ok(r) => r.into(),
-            Err(r) => r.into(),
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                return if plugin_base.terminate() {
+                    *ret.lock().unwrap() = ResOk.into()
+                } else {
+                    *ret.lock().unwrap() = ResultFalse.into()
+                };
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3EditController: terminate: panic");
+                *ret.lock().unwrap()
+            }
         }
     }
 }
@@ -256,11 +280,15 @@ impl IEditController for VST3EditController {
             return match edit_controller.get_parameter_count() {
                 Ok(count) => {
                     if count > i32::MAX as usize {
-                        log::trace!("get_parameter_count(): returned value is too big! {}usize > {}i32", count, i32::MAX);
-                        return InternalError.into()
+                        log::trace!(
+                            "get_parameter_count(): returned value is too big! {}usize > {}i32",
+                            count,
+                            i32::MAX
+                        );
+                        return InternalError.into();
                     }
                     count as i32
-                },
+                }
                 Err(_) => InternalError.into(),
             };
         }
@@ -274,7 +302,7 @@ impl IEditController for VST3EditController {
     ) -> i32 {
         if let Some(edit_controller) = self.get_plugin_base().lock().unwrap().as_edit_controller() {
             if param_index < 0 {
-                return InvalidArgument.into()
+                return InvalidArgument.into();
             }
             return match edit_controller.get_parameter_info(param_index as usize) {
                 Ok(param_info) => {
@@ -313,7 +341,7 @@ impl IEditController for VST3EditController {
     ) -> i32 {
         if let Some(edit_controller) = self.get_plugin_base().lock().unwrap().as_edit_controller() {
             if string.is_null() {
-                return InvalidArgument.into()
+                return InvalidArgument.into();
             }
             let string = U16CStr::from_ptr_str(string as *const u16).to_string_lossy();
             return match edit_controller.get_param_value_by_string(id as usize, &string) {
@@ -386,10 +414,11 @@ impl IEditController for VST3EditController {
                 return null_mut();
             }
 
-            let name = CStr::from_ptr(name).to_string_lossy().to_string();
-            return match edit_controller.create_view(&name) {
+            // For now the only name is "editor" so we can remove this until the API supports other
+            // types.
+            // let name = CStr::from_ptr(name).to_string_lossy().to_string();
+            return match edit_controller.create_view() {
                 Ok(plug_view) => {
-                    let plug_view = Box::into_raw(Box::new(plug_view)) as *mut _;
                     let mut view = VST3PlugView::new();
                     view.set_plug_view(plug_view);
                     Box::into_raw(view) as *mut c_void

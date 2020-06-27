@@ -36,6 +36,6 @@ pub trait PluginBase {
         None
     }
 
-    fn initialize(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr>;
-    fn terminate(&mut self) -> Result<ResultOk, ResultErr>;
+    fn initialize(&mut self, context: HostApplication) -> bool;
+    fn terminate(&mut self) -> bool;
 }

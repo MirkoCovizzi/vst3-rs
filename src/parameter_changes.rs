@@ -42,14 +42,19 @@ impl ParameterChanges {
 
     pub fn add_parameter_data(&self, id: &usize, index: &mut usize) -> Option<ParamValueQueue> {
         if *id > u32::MAX as usize {
-            log::trace!("ParameterChanges::add_parameter_data(): value is too big! {}usize > {}u32", *id, u32::MAX);
-            return None
+            log::trace!(
+                "ParameterChanges::add_parameter_data(): value is too big! {}usize > {}u32",
+                *id,
+                u32::MAX
+            );
+            return None;
         }
         let mut ptr;
         unsafe {
-            ptr = self
-                .inner
-                .add_parameter_data(id as *const usize as *const u32, index as *mut usize as *mut i32);
+            ptr = self.inner.add_parameter_data(
+                id as *const usize as *const u32,
+                index as *mut usize as *mut i32,
+            );
         }
         ParamValueQueue::from_raw(ptr)
     }

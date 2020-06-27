@@ -7,12 +7,13 @@ use num_traits::Float;
 use vst3_sys::vst::ProcessModes::{kOffline, kPrefetch, kRealtime};
 use vst3_sys::vst::{AudioBusBuffers, IAudioProcessor, SymbolicSampleSizes};
 
-use crate::ResultErr::{InvalidArgument, NotImplemented};
+use crate::ResultErr::{InternalError, InvalidArgument, NotImplemented, ResultFalse};
 use crate::ResultOk::ResOk;
 use crate::{
-    BusDirection, Component, EventList, ParameterChanges, ResultErr, ResultOk, Unknown,
-    VST3Component,
+    register_panic_msg, BusDirection, Component, EventList, ParameterChanges, ResultErr, ResultOk,
+    Unknown, VST3Component,
 };
+use std::sync::Mutex;
 
 pub enum SymbolicSampleSize {
     Sample32,
@@ -22,7 +23,9 @@ pub enum SymbolicSampleSize {
 impl SymbolicSampleSize {
     pub(crate) fn is_valid(size: i32) -> bool {
         // todo: find better way to do this
-        if size != SymbolicSampleSizes::kSample32 as i32 && size != SymbolicSampleSizes::kSample64 as i32 {
+        if size != SymbolicSampleSizes::kSample32 as i32
+            && size != SymbolicSampleSizes::kSample64 as i32
+        {
             false
         } else {
             true
@@ -259,22 +262,15 @@ impl<'a, T> OutputAudioBusBuffer<'a, T> {
 }
 
 pub trait AudioProcessor: Component {
-    fn set_bus_arrangements(
-        &mut self,
-        inputs: &[u64],
-        outputs: &[u64],
-    ) -> Result<ResultOk, ResultErr>;
-    fn get_bus_arrangement(&self, dir: &BusDirection, index: usize) -> Result<u64, ResultErr>;
-    fn can_process_sample_size(
-        &self,
-        symbolic_sample_size: &SymbolicSampleSize,
-    ) -> Result<ResultOk, ResultErr>;
-    fn get_latency_samples(&self) -> Result<usize, ResultErr>;
-    fn setup_processing(&mut self, setup: &ProcessSetup) -> Result<ResultOk, ResultErr>;
-    fn set_processing(&mut self, state: bool) -> Result<ResultOk, ResultErr>;
-    fn process(&mut self, data: &mut ProcessData<f32>) -> Result<ResultOk, ResultErr>;
-    fn process_f64(&mut self, data: &mut ProcessData<f64>) -> Result<ResultOk, ResultErr>;
-    fn get_tail_samples(&self) -> Result<usize, ResultErr>;
+    fn set_bus_arrangements(&mut self, inputs: &[u64], outputs: &[u64]) -> bool;
+    fn get_bus_arrangement(&self, dir: &BusDirection, index: usize) -> Option<u64>;
+    fn can_process_sample_size(&self, symbolic_sample_size: &SymbolicSampleSize) -> bool;
+    fn get_latency_samples(&self) -> usize;
+    fn setup_processing(&mut self, setup: &ProcessSetup) -> bool;
+    fn set_processing(&mut self, state: bool) -> bool;
+    fn process(&mut self, data: &mut ProcessData<f32>) -> bool;
+    fn process_f64(&mut self, data: &mut ProcessData<f64>) -> bool;
+    fn get_tail_samples(&self) -> usize;
 }
 
 impl IAudioProcessor for VST3Component {
@@ -285,164 +281,269 @@ impl IAudioProcessor for VST3Component {
         outputs: *mut u64,
         num_outs: i32,
     ) -> i32 {
-        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            if inputs.is_null() || outputs.is_null() {
-                return InvalidArgument.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(audio_processor) = plugin_base.as_audio_processor() {
+                    if inputs.is_null() || outputs.is_null() || num_ins < 0 || num_outs < 0 {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
+                    }
+                    let inputs = slice::from_raw_parts(inputs, num_ins as usize);
+                    let outputs = slice::from_raw_parts(outputs, num_outs as usize);
+                    return if audio_processor.set_bus_arrangements(inputs, outputs) {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
             }
-            if num_ins < 0 || num_outs < 0 {
-                return InvalidArgument.into()
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: set_bus_arrangements: panic");
+                *ret.lock().unwrap()
             }
-            let inputs = slice::from_raw_parts(inputs, num_ins as usize);
-            let outputs = slice::from_raw_parts(outputs, num_outs as usize);
-            return match audio_processor.set_bus_arrangements(inputs, outputs) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
         }
-        NotImplemented.into()
     }
 
     unsafe fn get_bus_arrangement(&self, dir: i32, index: i32, arr: *mut u64) -> i32 {
-        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            if !BusDirection::is_valid(dir) {
-                return InvalidArgument.into()
-            }
-            if index < 0 {
-                return InvalidArgument.into()
-            }
-            if arr.is_null() {
-                return InvalidArgument.into()
-            }
-            return match audio_processor.get_bus_arrangement(&BusDirection::from(dir), index as usize) {
-                Ok(bus_arrangement) => {
-                    *arr = bus_arrangement;
-                    ResOk.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(audio_processor) = plugin_base.as_audio_processor() {
+                    if !BusDirection::is_valid(dir) || index < 0 || arr.is_null() {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
+                    }
+                    return match audio_processor
+                        .get_bus_arrangement(&BusDirection::from(dir), index as usize)
+                    {
+                        Some(bus_arrangement) => {
+                            *arr = bus_arrangement;
+                            *ret.lock().unwrap() = ResOk.into()
+                        }
+                        None => *ret.lock().unwrap() = ResultFalse.into(),
+                    };
                 }
-                Err(r) => r.into(),
-            };
+                return *ret.lock().unwrap() = NotImplemented.into();
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: get_bus_arrangement: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn can_process_sample_size(&self, symbolic_sample_size: i32) -> i32 {
-        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            if !SymbolicSampleSize::is_valid(symbolic_sample_size) {
-                return InvalidArgument.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(audio_processor) = plugin_base.as_audio_processor() {
+                    if !SymbolicSampleSize::is_valid(symbolic_sample_size) {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
+                    }
+                    return if audio_processor
+                        .can_process_sample_size(&SymbolicSampleSize::from(symbolic_sample_size))
+                    {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
             }
-            return match audio_processor
-                .can_process_sample_size(&SymbolicSampleSize::from(symbolic_sample_size))
-            {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: can_process_sample_size: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn get_latency_samples(&self) -> u32 {
-        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            return match audio_processor.get_latency_samples() {
-                Ok(latency_samples) => {
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<u32> = Mutex::new(0);
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(audio_processor) = plugin_base.as_audio_processor() {
+                    let latency_samples = audio_processor.get_latency_samples();
                     if latency_samples > u32::MAX as usize {
-                        log::trace!("get_latency_samples(): returned value is too big! {}usize > {}u32", latency_samples, u32::MAX);
-                        0
+                        #[cfg(debug_assertions)]
+                        log::error!(
+                            "VST3Component: get_latency_samples: returned value is too big! \
+                                    {}usize > {}u32",
+                            latency_samples,
+                            u32::MAX
+                        );
+                        return;
                     } else {
-                        latency_samples as u32
+                        return *ret.lock().unwrap() = latency_samples as u32;
                     }
-                },
-                Err(_) => 0,
-            };
+                }
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: get_latency_samples: panic");
+                *ret.lock().unwrap()
+            }
         }
-        0
     }
 
     unsafe fn setup_processing(&self, setup: *const vst3_sys::vst::ProcessSetup) -> i32 {
-        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            if setup.is_null() {
-                return InvalidArgument.into()
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(audio_processor) = plugin_base.as_audio_processor() {
+                    if setup.is_null() {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
+                    }
+                    return if audio_processor.setup_processing(&ProcessSetup::from(*setup)) {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
             }
-            return match audio_processor.setup_processing(&ProcessSetup::from(*setup)) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: setup_processing: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn set_processing(&self, state: u8) -> i32 {
-        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            let state = if state != 0 { true } else { false };
-            return match audio_processor.set_processing(state) {
-                Ok(r) => r.into(),
-                Err(r) => r.into(),
-            };
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(audio_processor) = plugin_base.as_audio_processor() {
+                    let state = if state != 0 { true } else { false };
+                    return if audio_processor.set_processing(state) {
+                        *ret.lock().unwrap() = ResOk.into()
+                    } else {
+                        *ret.lock().unwrap() = ResultFalse.into()
+                    };
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: set_processing: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn process(&self, data: *mut vst3_sys::vst::ProcessData) -> i32 {
-        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            if data.is_null() {
-                return InvalidArgument.into();
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<i32> = Mutex::new(InternalError.into());
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(audio_processor) = plugin_base.as_audio_processor() {
+                    if data.is_null() {
+                        return *ret.lock().unwrap() = InvalidArgument.into();
+                    }
+                    return match SymbolicSampleSize::from((*data).symbolic_sample_size) {
+                        SymbolicSampleSize::Sample32 => {
+                            let mut process_data = ProcessData::<f32>::from_raw(
+                                (*data).num_inputs as usize,
+                                (*data).num_outputs as usize,
+                                (*data).inputs as *const AudioBusBuffers,
+                                (*data).outputs,
+                                ProcessMode::from((*data).process_mode),
+                                (*data).num_samples as usize,
+                                (*data).input_parameter_changes as *mut c_void,
+                                (*data).output_parameter_changes as *mut c_void,
+                                (*data).input_events as *mut c_void,
+                                (*data).output_events as *mut c_void,
+                            );
+
+                            if audio_processor.process(&mut process_data) {
+                                *ret.lock().unwrap() = ResOk.into()
+                            } else {
+                                *ret.lock().unwrap() = ResultFalse.into()
+                            }
+                        }
+                        SymbolicSampleSize::Sample64 => {
+                            let mut process_data = ProcessData::<f64>::from_raw(
+                                (*data).num_inputs as usize,
+                                (*data).num_outputs as usize,
+                                (*data).inputs as *const AudioBusBuffers,
+                                (*data).outputs,
+                                ProcessMode::from((*data).process_mode),
+                                (*data).num_samples as usize,
+                                (*data).input_parameter_changes as *mut c_void,
+                                (*data).output_parameter_changes as *mut c_void,
+                                (*data).input_events as *mut c_void,
+                                (*data).output_events as *mut c_void,
+                            );
+
+                            if audio_processor.process_f64(&mut process_data) {
+                                *ret.lock().unwrap() = ResOk.into()
+                            } else {
+                                *ret.lock().unwrap() = ResultFalse.into()
+                            }
+                        }
+                    };
+                }
+                return *ret.lock().unwrap() = NotImplemented.into();
             }
-            return match SymbolicSampleSize::from((*data).symbolic_sample_size) {
-                SymbolicSampleSize::Sample32 => {
-                    let mut process_data = ProcessData::<f32>::from_raw(
-                        (*data).num_inputs as usize,
-                        (*data).num_outputs as usize,
-                        (*data).inputs as *const AudioBusBuffers,
-                        (*data).outputs,
-                        ProcessMode::from((*data).process_mode),
-                        (*data).num_samples as usize,
-                        (*data).input_parameter_changes as *mut c_void,
-                        (*data).output_parameter_changes as *mut c_void,
-                        (*data).input_events as *mut c_void,
-                        (*data).output_events as *mut c_void,
-                    );
-
-                    match audio_processor.process(&mut process_data) {
-                        Ok(r) => r.into(),
-                        Err(r) => r.into(),
-                    }
-                }
-                SymbolicSampleSize::Sample64 => {
-                    let mut process_data = ProcessData::<f64>::from_raw(
-                        (*data).num_inputs as usize,
-                        (*data).num_outputs as usize,
-                        (*data).inputs as *const AudioBusBuffers,
-                        (*data).outputs,
-                        ProcessMode::from((*data).process_mode),
-                        (*data).num_samples as usize,
-                        (*data).input_parameter_changes as *mut c_void,
-                        (*data).output_parameter_changes as *mut c_void,
-                        (*data).input_events as *mut c_void,
-                        (*data).output_events as *mut c_void,
-                    );
-
-                    match audio_processor.process_f64(&mut process_data) {
-                        Ok(r) => r.into(),
-                        Err(r) => r.into(),
-                    }
-                }
-            };
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: process: panic");
+                *ret.lock().unwrap()
+            }
         }
-        NotImplemented.into()
     }
 
     unsafe fn get_tail_samples(&self) -> u32 {
-        if let Some(audio_processor) = self.get_plugin_base().lock().unwrap().as_audio_processor() {
-            return match audio_processor.get_tail_samples() {
-                Ok(tail_samples) => {
+        let mutex_plugin_base = self.get_plugin_base();
+        let ret: Mutex<u32> = Mutex::new(0);
+        match std::panic::catch_unwind(|| {
+            if let Ok(mut plugin_base) = mutex_plugin_base.lock() {
+                if let Some(audio_processor) = plugin_base.as_audio_processor() {
+                    let tail_samples = audio_processor.get_tail_samples();
                     if tail_samples > u32::MAX as usize {
-                        log::trace!("get_tail_samples(): returned value is too big! {}usize > {}u32", tail_samples, u32::MAX);
-                        0
+                        #[cfg(debug_assertions)]
+                        log::error!(
+                            "VST3Component: get_tail_samples: returned value is too big! \
+                                    {}usize > {}u32",
+                            tail_samples,
+                            u32::MAX
+                        );
+                        return;
                     } else {
-                        tail_samples as u32
+                        return *ret.lock().unwrap() = tail_samples as u32;
                     }
-                },
-                Err(_) => 0,
-            };
+                }
+            }
+        }) {
+            Ok(_) => *ret.lock().unwrap(),
+            Err(_) => {
+                #[cfg(debug_assertions)]
+                log::error!("VST3Component: terminate: panic");
+                *ret.lock().unwrap()
+            }
         }
-        0
     }
 }

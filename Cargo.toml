@@ -13,7 +13,12 @@ log = "0.4.8"
 flexi_logger = "0.15.2"
 widestring = "0.4.0"
 num-traits = "0.2.11"
+winapi = {version = "0.3.8", features = ["winuser"]}
 
 [[example]]
 name = "again"
 crate-type = ["cdylib"]
+
+[profile.release]
+lto = true
+codegen-units = 1

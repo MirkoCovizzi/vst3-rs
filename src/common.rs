@@ -1,6 +1,6 @@
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_short, c_void};
-use std::ptr::copy_nonoverlapping;
+use std::ptr::{copy_nonoverlapping, null_mut};
 
 use widestring::U16CString;
 
@@ -8,6 +8,22 @@ use vst3_com::sys::GUID;
 use vst3_sys::vst::{kFx, kVstAudioEffectClass, kVstComponentControllerClass};
 
 use crate::{AudioProcessor, Component, EditController, HostApplication, ResultErr, ResultOk};
+
+pub(crate) unsafe fn register_panic_msg(msg: &str) {
+    #[cfg(debug_assertions)]
+    log::error!("{}", msg);
+
+    #[cfg(target_os = "windows")]
+    {
+        let msg = msg.to_owned() + "\0";
+        winapi::um::winuser::MessageBoxA(
+            null_mut(),
+            msg.as_ptr() as *const i8,
+            null_mut(),
+            winapi::um::winuser::MB_ICONWARNING,
+        );
+    }
+}
 
 /// If the source &str is too long, it gets truncated to fit into the destination
 pub(crate) unsafe fn strcpy(src: &str, dst: *mut c_char) {
@@ -64,12 +80,12 @@ const MANY_INSTANCES: u32 = 0x7FFFFFFF;
 
 // todo: change lifetimes?
 pub struct ClassInfo {
-    cid: &'static UID,
+    cid: UID,
     cardinality: u32,
-    category: &'static Category,
+    category: Category,
     name: &'static str,
     class_flags: u32,
-    subcategories: &'static FxSubcategory,
+    subcategories: FxSubcategory,
     vendor: &'static str,
     version: &'static str,
     sdk_version: &'static str,
@@ -155,26 +171,26 @@ impl ClassInfo {
 
 // todo: change lifetimes?
 pub struct ClassInfoBuilder {
-    cid: &'static UID,
+    cid: UID,
     cardinality: u32,
-    category: &'static Category,
+    category: Category,
     name: &'static str,
     class_flags: u32,
-    subcategories: &'static FxSubcategory,
+    subcategories: FxSubcategory,
     vendor: &'static str,
     version: &'static str,
     sdk_version: &'static str,
 }
 
 impl ClassInfoBuilder {
-    pub const fn new(cid: &'static UID) -> ClassInfoBuilder {
+    pub const fn new(cid: UID) -> ClassInfoBuilder {
         ClassInfoBuilder {
             cid,
             name: "VST3",
             cardinality: MANY_INSTANCES,
-            category: &Category::AudioEffect,
+            category: Category::AudioEffect,
             class_flags: 0,
-            subcategories: &FxSubcategory::NoSubcategory,
+            subcategories: FxSubcategory::NoSubcategory,
             vendor: "",
             version: "0.1.0",
             sdk_version: "VST 3.6.14",
@@ -191,7 +207,7 @@ impl ClassInfoBuilder {
         self
     }
 
-    pub const fn category(mut self, category: &'static Category) -> ClassInfoBuilder {
+    pub const fn category(mut self, category: Category) -> ClassInfoBuilder {
         self.category = category;
         self
     }
@@ -201,10 +217,7 @@ impl ClassInfoBuilder {
         self
     }
 
-    pub const fn subcategories(
-        mut self,
-        subcategories: &'static FxSubcategory,
-    ) -> ClassInfoBuilder {
+    pub const fn subcategories(mut self, subcategories: FxSubcategory) -> ClassInfoBuilder {
         self.subcategories = subcategories;
         self
     }
@@ -224,7 +237,7 @@ impl ClassInfoBuilder {
         self
     }
 
-    pub const fn build(&self) -> ClassInfo {
+    pub const fn build(self) -> ClassInfo {
         ClassInfo {
             cid: self.cid,
             cardinality: self.cardinality,

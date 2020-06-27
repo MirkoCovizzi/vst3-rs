@@ -9,14 +9,15 @@ use vst3::ParameterFlag::{CanAutomate, IsBypass, IsReadOnly};
 use vst3::ResultErr::{InvalidArgument, NotImplemented, ResultFalse};
 use vst3::ResultOk::ResOk;
 use vst3::{
-    get_channel_count, plugin_main, AudioProcessor, BaseAudioBus, BaseEventBus, BaseParameter,
-    BusDirection, BusInfo, BusType, BusVec, Category, ClassInfo, ClassInfoBuilder, Component,
-    ComponentHandler, EditController, FactoryInfo, FxSubcategory, HostApplication, IoMode,
-    MediaType, Parameter, ParameterContainer, ParameterInfo, ParameterInfoBuilder, PlugView,
-    PluginBase, PluginFactory, ProcessData, ProcessSetup, ResultErr, ResultOk, RoutingInfo,
-    SeekMode, Stream, SymbolicSampleSize, Unit, UnitBuilder, UnitInfo, NO_PROGRAM_LIST_ID,
-    ROOT_UNIT_ID, STEREO, UID,
+    get_channel_count, plugin_main, setup_logger, AudioProcessor, BaseAudioBus, BaseEventBus,
+    BaseParameter, BusDirection, BusInfo, BusType, BusVec, Category, ClassInfo, ClassInfoBuilder,
+    Component, ComponentHandler, EditController, FactoryInfo, FxSubcategory,
+    HostApplication, IoMode, MediaType, Parameter, ParameterContainer, ParameterInfo,
+    ParameterInfoBuilder, PlugView, PluginBase, PluginFactory, ProcessData, ProcessSetup,
+    ResultErr, ResultOk, RoutingInfo, SeekMode, Stream, SymbolicSampleSize, Unit, UnitBuilder,
+    UnitInfo, WebPlugView, NO_PROGRAM_LIST_ID, ROOT_UNIT_ID, STEREO, UID,
 };
+use std::any::Any;
 
 const GAIN_ID: usize = 0;
 const VU_PPM: usize = 1;
@@ -101,14 +102,15 @@ struct AGainEditController {
     units: Vec<Unit>,
     parameters: ParameterContainer,
     component_handler: Option<ComponentHandler>,
+    view: Box<dyn PlugView>,
 }
 
 impl AGainEditController {
     const UID: UID = UID::new([1, 2, 3, 4]);
-    const INFO: ClassInfo = ClassInfoBuilder::new(&Self::UID)
+    const INFO: ClassInfo = ClassInfoBuilder::new(Self::UID)
         .name("AGain Rust Controller")
         .vendor("rust.audio")
-        .category(&Category::ComponentController)
+        .category(Category::ComponentController)
         .build();
 }
 
@@ -119,6 +121,7 @@ impl Default for AGainEditController {
             units: vec![],
             parameters: ParameterContainer::new(),
             component_handler: None,
+            view: WebPlugView::new()
         }
     }
 }
@@ -128,9 +131,9 @@ impl PluginBase for AGainEditController {
         Some(self)
     }
 
-    fn initialize(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr> {
+    fn initialize(&mut self, context: HostApplication) -> bool {
         if self.context.is_some() {
-            return Err(ResultFalse);
+            return false;
         }
 
         self.context = Some(context);
@@ -164,21 +167,21 @@ impl PluginBase for AGainEditController {
         let bypass_param = BaseParameter::new(bypass_param_info);
         self.parameters.add_parameter(bypass_param);
 
-        Ok(ResOk)
+        true
     }
 
-    fn terminate(&mut self) -> Result<ResultOk, ResultErr> {
+    fn terminate(&mut self) -> bool {
         self.parameters.remove_all();
 
         self.context = None;
 
-        Ok(ResOk)
+        true
     }
 }
 
 impl EditController for AGainEditController {
     fn set_component_state(&mut self, state: &Stream) -> Result<ResultOk, ResultErr> {
-        if let Ok(saved_gain) = state.read::<f64>() {
+        if let Some(saved_gain) = state.read::<f64>() {
             self.set_param_normalized(GAIN_ID, saved_gain);
         } else {
             return Err(ResultFalse);
@@ -186,7 +189,7 @@ impl EditController for AGainEditController {
 
         state.seek::<f64>(SeekMode::SeekCurrent);
 
-        if let Ok(bypass_state) = state.read::<bool>() {
+        if let Some(bypass_state) = state.read::<bool>() {
             self.set_param_normalized(BYPASS_ID, if bypass_state { 1.0 } else { 0.0 });
         } else {
             return Err(ResultFalse);
@@ -265,8 +268,8 @@ impl EditController for AGainEditController {
         Ok(ResOk)
     }
 
-    fn create_view(&self, _name: &str) -> Result<Box<dyn PlugView>, ResultErr> {
-        Err(ResultFalse)
+    fn create_view(&mut self) -> Result<&mut Box<dyn PlugView>, ResultErr> {
+        Ok(&mut self.view)
     }
 }
 
@@ -283,11 +286,11 @@ struct AGainComponent {
 
 impl AGainComponent {
     const UID: UID = UID::new([5, 6, 7, 8]);
-    const INFO: ClassInfo = ClassInfoBuilder::new(&Self::UID)
+    const INFO: ClassInfo = ClassInfoBuilder::new(Self::UID)
         .name("AGain Rust")
         .vendor("rust.audio")
-        .category(&Category::AudioEffect)
-        .subcategories(&FxSubcategory::Fx)
+        .category(Category::AudioEffect)
+        .subcategories(FxSubcategory::Fx)
         .build();
 
     fn add_audio_input(&mut self, name: &str, arr: u64, bus_type: BusType, flags: i32) {
@@ -365,32 +368,11 @@ impl PluginBase for AGainComponent {
         Some(self)
     }
 
-    fn initialize(&mut self, context: HostApplication) -> Result<ResultOk, ResultErr> {
-        #[cfg(debug_assertions)]
-        {
-            let log_path = std::env::var("VST3_LOG_PATH");
-            match log_path {
-                Ok(path) => {
-                    match Logger::with_env_or_str("info")
-                        .log_to_file()
-                        .directory(path)
-                        .format(opt_format)
-                        .start()
-                    {
-                        Ok(_) => log::info!("Started logger..."),
-                        Err(_) => (),
-                    }
-                }
-                Err(_) => (),
-            }
-
-            panic::set_hook(Box::new(|info| {
-                log::error!("{}", info);
-            }));
-        }
+    fn initialize(&mut self, context: HostApplication) -> bool {
+        setup_logger("VST3_LOG_PATH");
 
         if self.context.is_some() {
-            return Err(ResultFalse);
+            return false;
         }
         self.context = Some(context);
 
@@ -399,44 +381,36 @@ impl PluginBase for AGainComponent {
 
         self.add_event_input("Event In", 1, Main, 1);
 
-        Ok(ResOk)
+        true
     }
-    fn terminate(&mut self) -> Result<ResultOk, ResultErr> {
+    fn terminate(&mut self) -> bool {
         self.remove_audio_busses();
         self.remove_event_busses();
 
         self.context = None;
 
-        Ok(ResOk)
+        true
     }
 }
 
 impl Component for AGainComponent {
-    fn get_controller_class_id(&self) -> Result<&UID, ResultErr> {
-        Ok(&AGainEditController::UID)
+    fn get_controller_class_id(&self) -> Option<&UID> {
+        Some(&AGainEditController::UID)
     }
 
-    fn set_io_mode(&self, _mode: &IoMode) -> Result<ResultOk, ResultErr> {
-        Err(NotImplemented)
+    fn set_io_mode(&self, _mode: &IoMode) -> bool {
+        false
     }
 
-    fn get_bus_count(&self, media_type: &MediaType, dir: &BusDirection) -> Result<usize, ResultErr> {
+    fn get_bus_count(&self, media_type: &MediaType, dir: &BusDirection) -> usize {
         let bus_list = self.get_bus_vec(media_type, dir);
-        Ok(bus_list.get_vec().len())
+        bus_list.get_vec().len()
     }
 
-    fn get_bus_info(
-        &self,
-        type_: &MediaType,
-        dir: &BusDirection,
-        index: usize,
-    ) -> Result<BusInfo, ResultErr> {
-        if index < 0 {
-            return Err(InvalidArgument);
-        }
+    fn get_bus_info(&self, type_: &MediaType, dir: &BusDirection, index: usize) -> Option<BusInfo> {
         let mut bus_list = self.get_bus_vec(type_, dir);
         if index >= bus_list.get_vec().len() {
-            return Err(InvalidArgument);
+            return None;
         }
 
         let bus = &bus_list.get_vec()[index];
@@ -451,11 +425,11 @@ impl Component for AGainComponent {
 
         bus.get_info(&mut bus_info);
 
-        Ok(bus_info)
+        Some(bus_info)
     }
 
-    fn get_routing_info(&self) -> Result<(&RoutingInfo, &RoutingInfo), ResultErr> {
-        Err(NotImplemented)
+    fn get_routing_info(&self) -> Option<(&RoutingInfo, &RoutingInfo)> {
+        None
     }
 
     fn activate_bus(
@@ -464,48 +438,47 @@ impl Component for AGainComponent {
         dir: &BusDirection,
         index: usize,
         state: bool,
-    ) -> Result<ResultOk, ResultErr> {
-        if index < 0 {
-            return Err(InvalidArgument);
-        }
+    ) -> bool {
         let mut bus_list = self.get_bus_vec_mut(media_type, dir);
         if index >= bus_list.get_vec().len() {
-            return Err(InvalidArgument);
+            return false;
         }
 
         let mut bus = &mut bus_list.get_vec_mut()[index];
         bus.set_active(state);
 
-        Ok(ResOk)
+        true
     }
 
-    fn set_active(&self, _state: bool) -> Result<ResultOk, ResultErr> {
-        Ok(ResOk)
+    fn set_active(&self, _state: bool) -> bool {
+        true
     }
 
-    fn set_state(&mut self, state: &Stream) -> Result<ResultOk, ResultErr> {
-        self.gain = state.read::<f64>()?;
-        self.gain_reduction = state.read::<f64>()?;
-        self.bypass = state.read::<bool>()?;
+    fn set_state(&mut self, state: &Stream) -> bool {
+        if let Some(gain) = state.read::<f64>() {
+            self.gain = gain;
+        }
+        if let Some(gain_reduction) = state.read::<f64>() {
+            self.gain_reduction = gain_reduction;
+        }
+        if let Some(bypass) = state.read::<bool>() {
+            self.bypass = bypass;
+        }
 
-        Ok(ResOk)
+        true
     }
 
-    fn get_state(&self, state: &Stream) -> Result<ResultOk, ResultErr> {
+    fn get_state(&self, state: &Stream) -> bool {
         state.write::<f64>(self.gain);
         state.write::<f64>(self.gain_reduction);
         state.write::<bool>(self.bypass);
 
-        Ok(ResOk)
+        true
     }
 }
 
 impl AudioProcessor for AGainComponent {
-    fn set_bus_arrangements(
-        &mut self,
-        inputs: &[u64],
-        outputs: &[u64],
-    ) -> Result<ResultOk, ResultErr> {
+    fn set_bus_arrangements(&mut self, inputs: &[u64], outputs: &[u64]) -> bool {
         if inputs.len() == 1 && outputs.len() == 1 {
             return if get_channel_count(inputs[0]) == 1 && get_channel_count(outputs[0]) == 1 {
                 let bus = self.audio_inputs.get_vec()[0].as_audio_bus().unwrap();
@@ -514,61 +487,58 @@ impl AudioProcessor for AGainComponent {
                     self.add_audio_input("Mono In", inputs[0], Main, 1);
                     self.add_audio_output("Mono Out", inputs[0], Main, 1);
                 }
-                Ok(ResOk)
+                true
             } else {
-                let mut result = Err(ResultFalse);
+                let mut result = false;
                 let bus = self.audio_inputs.get_vec()[0].as_audio_bus().unwrap();
                 if get_channel_count(inputs[0]) == 2 && get_channel_count(outputs[0]) == 2 {
                     self.remove_audio_busses();
                     self.add_audio_input("Stereo In", inputs[0], Main, 1);
                     self.add_audio_output("Stereo Out", inputs[0], Main, 1);
-                    result = Ok(ResOk);
+                    result = true;
                 } else if bus.get_speaker_arrangement() != STEREO {
                     self.remove_audio_busses();
                     self.add_audio_input("Stereo In", inputs[0], Main, 1);
                     self.add_audio_output("Stereo Out", inputs[0], Main, 1);
-                    result = Err(ResultFalse);
+                    result = false;
                 }
                 result
             };
         }
 
-        Err(ResultFalse)
+        false
     }
 
-    fn get_bus_arrangement(&self, dir: &BusDirection, index: usize) -> Result<u64, ResultErr> {
+    fn get_bus_arrangement(&self, dir: &BusDirection, index: usize) -> Option<u64> {
         let bus_vec = self.get_bus_vec(&Audio, dir);
         if index >= bus_vec.get_vec().len() {
-            return Err(InvalidArgument);
+            return None;
         }
 
         let audio_bus = bus_vec.get_vec()[index].as_audio_bus().unwrap();
-        Ok(audio_bus.get_speaker_arrangement())
+        Some(audio_bus.get_speaker_arrangement())
     }
 
-    fn can_process_sample_size(
-        &self,
-        symbolic_sample_size: &SymbolicSampleSize,
-    ) -> Result<ResultOk, ResultErr> {
+    fn can_process_sample_size(&self, symbolic_sample_size: &SymbolicSampleSize) -> bool {
         match symbolic_sample_size {
-            SymbolicSampleSize::Sample32 => Ok(ResOk),
-            SymbolicSampleSize::Sample64 => Err(ResultFalse),
+            SymbolicSampleSize::Sample32 => true,
+            SymbolicSampleSize::Sample64 => false,
         }
     }
 
-    fn get_latency_samples(&self) -> Result<usize, ResultErr> {
-        Ok(0)
+    fn get_latency_samples(&self) -> usize {
+        0
     }
 
-    fn setup_processing(&mut self, _setup: &ProcessSetup) -> Result<ResultOk, ResultErr> {
-        Ok(ResOk)
+    fn setup_processing(&mut self, _setup: &ProcessSetup) -> bool {
+        true
     }
 
-    fn set_processing(&mut self, _state: bool) -> Result<ResultOk, ResultErr> {
-        Ok(ResOk)
+    fn set_processing(&mut self, _state: bool) -> bool {
+        true
     }
 
-    fn process(&mut self, data: &mut ProcessData<f32>) -> Result<ResultOk, ResultErr> {
+    fn process(&mut self, data: &mut ProcessData<f32>) -> bool {
         if let Some(param_changes) = data.get_input_param_changes() {
             let num_params_changed = param_changes.get_parameter_count();
             for i in 0..num_params_changed {
@@ -592,7 +562,7 @@ impl AudioProcessor for AGainComponent {
         }
 
         if data.num_inputs() == 0 || data.num_outputs() == 0 {
-            return Ok(ResOk);
+            return true;
         }
 
         let mut temp = 0.0;
@@ -618,15 +588,15 @@ impl AudioProcessor for AGainComponent {
             }
         }
 
-        Ok(ResOk)
+        true
     }
 
-    fn process_f64(&mut self, _data: &mut ProcessData<f64>) -> Result<ResultOk, ResultErr> {
-        Err(NotImplemented)
+    fn process_f64(&mut self, _data: &mut ProcessData<f64>) -> bool {
+        false
     }
 
-    fn get_tail_samples(&self) -> Result<usize, ResultErr> {
-        Ok(0)
+    fn get_tail_samples(&self) -> usize {
+        0
     }
 }
 
