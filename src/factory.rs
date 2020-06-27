@@ -99,6 +99,7 @@ pub(crate) struct VST3PluginFactory {
     __refcnt: std::cell::Cell<u32>,
     inner: Mutex<Box<dyn PluginFactory>>,
 }
+
 impl VST3PluginFactory {
     fn allocate(inner: Mutex<Box<dyn PluginFactory>>) -> Box<VST3PluginFactory> {
         let ipluginfactory_vtable = <dyn IPluginFactory as ::vst3_com::ProductionComInterface<
