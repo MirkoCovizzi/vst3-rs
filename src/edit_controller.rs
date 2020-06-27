@@ -16,8 +16,8 @@ use crate::unknown::{ResultErr, Unknown};
 use crate::ResultErr::{InternalError, InvalidArgument, NotImplemented};
 use crate::ResultOk::ResOk;
 use crate::{
-    wstrcpy, ClassInfo, ClassInfoBuilder, HostApplication, ParameterInfo,
-    PluginBase, ResultOk, Stream, UnitInfo, UID,
+    wstrcpy, ClassInfo, ClassInfoBuilder, HostApplication, ParameterInfo, PluginBase, ResultOk,
+    Stream, UnitInfo, UID,
 };
 
 pub struct ComponentHandler {
@@ -169,9 +169,100 @@ impl EditController for DummyEditController {
     }
 }
 
-#[VST3(implements(IEditController, IUnitInfo, IMidiMapping))]
+#[repr(C)]
 pub(crate) struct VST3EditController {
+    __ieditcontrollervptr: *const <dyn IEditController as vst3_com::ComInterface>::VTable,
+    __iunitinfovptr: *const <dyn IUnitInfo as vst3_com::ComInterface>::VTable,
+    __imidimappingvptr: *const <dyn IMidiMapping as vst3_com::ComInterface>::VTable,
+    __refcnt: std::cell::Cell<u32>,
     inner: Mutex<Box<dyn PluginBase>>,
+}
+
+impl VST3EditController {
+    fn allocate(inner: Mutex<Box<dyn PluginBase>>) -> Box<VST3EditController> {
+        let ieditcontroller_vtable = <dyn IEditController as ::vst3_com::ProductionComInterface<
+            VST3EditController,
+        >>::vtable::<vst3_com::Offset0>();
+        let __ieditcontrollervptr = Box::into_raw(Box::new(ieditcontroller_vtable));
+        let iunitinfo_vtable = <dyn IUnitInfo as ::vst3_com::ProductionComInterface<
+            VST3EditController,
+        >>::vtable::<vst3_com::Offset1>();
+        let __iunitinfovptr = Box::into_raw(Box::new(iunitinfo_vtable));
+        let imidimapping_vtable = <dyn IMidiMapping as ::vst3_com::ProductionComInterface<
+            VST3EditController,
+        >>::vtable::<vst3_com::Offset2>();
+        let __imidimappingvptr = Box::into_raw(Box::new(imidimapping_vtable));
+        let out = VST3EditController {
+            __ieditcontrollervptr,
+            __iunitinfovptr,
+            __imidimappingvptr,
+            __refcnt: std::cell::Cell::new(1),
+            inner,
+        };
+        Box::new(out)
+    }
+}
+
+unsafe impl vst3_com::CoClass for VST3EditController {}
+
+impl vst3_com::interfaces::IUnknown for VST3EditController {
+    unsafe fn query_interface(
+        &self,
+        riid: *const vst3_com::sys::IID,
+        ppv: *mut *mut std::ffi::c_void,
+    ) -> vst3_com::sys::HRESULT {
+        let riid = &*riid;
+        if riid == &vst3_com::interfaces::iunknown::IID_IUNKNOWN {
+            *ppv = &self.__ieditcontrollervptr as *const _ as *mut std::ffi::c_void;
+        } else if <dyn IEditController as vst3_com::ComInterface>::is_iid_in_inheritance_chain(riid)
+        {
+            *ppv = &self.__ieditcontrollervptr as *const _ as *mut std::ffi::c_void;
+        } else if <dyn IUnitInfo as vst3_com::ComInterface>::is_iid_in_inheritance_chain(riid) {
+            *ppv = &self.__iunitinfovptr as *const _ as *mut std::ffi::c_void;
+        } else if <dyn IMidiMapping as vst3_com::ComInterface>::is_iid_in_inheritance_chain(riid) {
+            *ppv = &self.__imidimappingvptr as *const _ as *mut std::ffi::c_void;
+        } else {
+            *ppv = std::ptr::null_mut::<std::ffi::c_void>();
+            return vst3_com::sys::E_NOINTERFACE;
+        }
+        self.add_ref();
+        vst3_com::sys::NOERROR
+    }
+
+    unsafe fn add_ref(&self) -> u32 {
+        let value = self
+            .__refcnt
+            .get()
+            .checked_add(1)
+            .expect("Overflow of reference count");
+        self.__refcnt.set(value);
+        value
+    }
+
+    unsafe fn release(&self) -> u32 {
+        let value = self
+            .__refcnt
+            .get()
+            .checked_sub(1)
+            .expect("Underflow of reference count");
+        self.__refcnt.set(value);
+        let __refcnt = self.__refcnt.get();
+        if __refcnt == 0 {
+            Box::from_raw(
+                self.__ieditcontrollervptr
+                    as *mut <dyn IEditController as vst3_com::ComInterface>::VTable,
+            );
+            Box::from_raw(
+                self.__iunitinfovptr as *mut <dyn IUnitInfo as vst3_com::ComInterface>::VTable,
+            );
+            Box::from_raw(
+                self.__imidimappingvptr
+                    as *mut <dyn IMidiMapping as vst3_com::ComInterface>::VTable,
+            );
+            Box::from_raw(self as *const _ as *mut VST3EditController);
+        }
+        __refcnt
+    }
 }
 
 impl VST3EditController {

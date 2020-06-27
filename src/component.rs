@@ -288,9 +288,88 @@ impl Component for DummyComponent {
     }
 }
 
-#[VST3(implements(IComponent, IAudioProcessor))]
+#[repr(C)]
 pub(crate) struct VST3Component {
+    __icomponentvptr: *const <dyn IComponent as vst3_com::ComInterface>::VTable,
+    __iaudioprocessorvptr: *const <dyn IAudioProcessor as vst3_com::ComInterface>::VTable,
+    __refcnt: std::cell::Cell<u32>,
     inner: Mutex<Box<dyn PluginBase>>,
+}
+
+impl VST3Component {
+    fn allocate(inner: Mutex<Box<dyn PluginBase>>) -> Box<VST3Component> {
+        let icomponent_vtable = <dyn IComponent as ::vst3_com::ProductionComInterface<
+            VST3Component,
+        >>::vtable::<vst3_com::Offset0>();
+        let __icomponentvptr = Box::into_raw(Box::new(icomponent_vtable));
+        let iaudioprocessor_vtable = <dyn IAudioProcessor as ::vst3_com::ProductionComInterface<
+            VST3Component,
+        >>::vtable::<vst3_com::Offset1>();
+        let __iaudioprocessorvptr = Box::into_raw(Box::new(iaudioprocessor_vtable));
+        let out = VST3Component {
+            __icomponentvptr,
+            __iaudioprocessorvptr,
+            __refcnt: std::cell::Cell::new(1),
+            inner,
+        };
+        Box::new(out)
+    }
+}
+
+unsafe impl vst3_com::CoClass for VST3Component {}
+
+impl vst3_com::interfaces::IUnknown for VST3Component {
+    unsafe fn query_interface(
+        &self,
+        riid: *const vst3_com::sys::IID,
+        ppv: *mut *mut std::ffi::c_void,
+    ) -> vst3_com::sys::HRESULT {
+        let riid = &*riid;
+        if riid == &vst3_com::interfaces::iunknown::IID_IUNKNOWN {
+            *ppv = &self.__icomponentvptr as *const _ as *mut std::ffi::c_void;
+        } else if <dyn IComponent as vst3_com::ComInterface>::is_iid_in_inheritance_chain(riid) {
+            *ppv = &self.__icomponentvptr as *const _ as *mut std::ffi::c_void;
+        } else if <dyn IAudioProcessor as vst3_com::ComInterface>::is_iid_in_inheritance_chain(riid)
+        {
+            *ppv = &self.__iaudioprocessorvptr as *const _ as *mut std::ffi::c_void;
+        } else {
+            *ppv = std::ptr::null_mut::<std::ffi::c_void>();
+            return vst3_com::sys::E_NOINTERFACE;
+        }
+        self.add_ref();
+        vst3_com::sys::NOERROR
+    }
+
+    unsafe fn add_ref(&self) -> u32 {
+        let value = self
+            .__refcnt
+            .get()
+            .checked_add(1)
+            .expect("Overflow of reference count");
+        self.__refcnt.set(value);
+        value
+    }
+
+    unsafe fn release(&self) -> u32 {
+        let value = self
+            .__refcnt
+            .get()
+            .checked_sub(1)
+            .expect("Underflow of reference count");
+        self.__refcnt.set(value);
+        let __refcnt = self.__refcnt.get();
+        if __refcnt == 0 {
+            Box::from_raw(
+                self.__icomponentvptr as *mut <dyn IComponent as vst3_com::ComInterface>::VTable,
+            );
+            Box::from_raw(
+                self.__iaudioprocessorvptr
+                    as *mut <dyn IAudioProcessor as vst3_com::ComInterface>::VTable,
+            );
+            Box::from_raw(self as *const _ as *mut VST3Component);
+        }
+        __refcnt
+    }
 }
 
 impl VST3Component {

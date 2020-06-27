@@ -11,13 +11,12 @@ use vst3::ResultOk::ResOk;
 use vst3::{
     get_channel_count, plugin_main, setup_logger, AudioProcessor, BaseAudioBus, BaseEventBus,
     BaseParameter, BusDirection, BusInfo, BusType, BusVec, Category, ClassInfo, ClassInfoBuilder,
-    Component, ComponentHandler, EditController, FactoryInfo, FxSubcategory,
-    HostApplication, IoMode, MediaType, Parameter, ParameterContainer, ParameterInfo,
-    ParameterInfoBuilder, PlugView, PluginBase, PluginFactory, ProcessData, ProcessSetup,
-    ResultErr, ResultOk, RoutingInfo, SeekMode, Stream, SymbolicSampleSize, Unit, UnitBuilder,
-    UnitInfo, WebPlugView, NO_PROGRAM_LIST_ID, ROOT_UNIT_ID, STEREO, UID,
+    Component, ComponentHandler, EditController, FactoryInfo, FxSubcategory, HostApplication,
+    IoMode, MediaType, Parameter, ParameterContainer, ParameterInfo, ParameterInfoBuilder,
+    PlugView, PluginBase, PluginFactory, ProcessData, ProcessSetup, ResultErr, ResultOk,
+    RoutingInfo, SeekMode, Stream, SymbolicSampleSize, Unit, UnitBuilder, UnitInfo, WebPlugView,
+    NO_PROGRAM_LIST_ID, ROOT_UNIT_ID, STEREO, UID,
 };
-use std::any::Any;
 
 const GAIN_ID: usize = 0;
 const VU_PPM: usize = 1;
@@ -121,7 +120,7 @@ impl Default for AGainEditController {
             units: vec![],
             parameters: ParameterContainer::new(),
             component_handler: None,
-            view: WebPlugView::new()
+            view: WebPlugView::new(),
         }
     }
 }

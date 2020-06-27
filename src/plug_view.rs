@@ -5,19 +5,19 @@ use vst3_sys::VST3;
 
 use crate::unknown::ResultErr;
 use std::os::raw::c_void;
-use std::sync::{mpsc, Arc, Mutex, Condvar};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 
 use core::mem::size_of;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 
-use log::Log;
-use std::ffi::CString;
-use crate::ResultOk::ResOk;
 use crate::ResultErr::ResultFalse;
-use vst3_com::offset::Offset;
-use std::any::Any;
 use crate::ResultOk;
+use crate::ResultOk::ResOk;
+use log::Log;
+use std::any::Any;
+use std::ffi::CString;
+use vst3_com::offset::Offset;
 
 pub trait PlugView {
     fn new() -> Box<Self>
@@ -173,18 +173,21 @@ impl Offset for Offset0 {
 
 impl<'a> VST3PlugView<'a> {
     fn allocate(inner: Mutex<Option<&mut Box<dyn PlugView>>>) -> Box<VST3PlugView> {
-        let iplugview_vtable = <dyn IPlugView as ::vst3_com::ProductionComInterface<VST3PlugView,>>::vtable::<Offset0>();
+        let iplugview_vtable = <dyn IPlugView as ::vst3_com::ProductionComInterface<
+            VST3PlugView,
+        >>::vtable::<Offset0>();
         let __iplugviewvptr = Box::into_raw(Box::new(iplugview_vtable));
         let out = VST3PlugView {
             __iplugviewvptr,
             __refcnt: std::cell::Cell::new(1),
-            inner
+            inner,
         };
         Box::new(out)
     }
 }
 
 unsafe impl<'a> vst3_com::CoClass for VST3PlugView<'a> {}
+
 impl<'a> vst3_com::interfaces::IUnknown for VST3PlugView<'a> {
     unsafe fn query_interface(
         &self,
@@ -203,6 +206,7 @@ impl<'a> vst3_com::interfaces::IUnknown for VST3PlugView<'a> {
         self.add_ref();
         vst3_com::sys::NOERROR
     }
+
     unsafe fn add_ref(&self) -> u32 {
         let value = self
             .__refcnt
@@ -212,6 +216,7 @@ impl<'a> vst3_com::interfaces::IUnknown for VST3PlugView<'a> {
         self.__refcnt.set(value);
         value
     }
+
     unsafe fn release(&self) -> u32 {
         let value = self
             .__refcnt
