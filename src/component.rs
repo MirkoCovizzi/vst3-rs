@@ -13,12 +13,13 @@ use vst3_sys::VST3;
 use crate::ResultErr::{InternalError, InvalidArgument, NotImplemented, ResultFalse};
 use crate::ResultOk::ResOk;
 use crate::{
-    register_panic_msg, wstrcpy, AudioProcessor, ClassInfo, HostApplication, PluginBase,
-    ProcessData, ProcessMode, ProcessSetup, ResultErr, ResultOk, Stream, SymbolicSampleSize,
-    Unknown, UID,
+    register_panic_msg, wstrcpy, AudioProcessor, ClassInfo, HostApplication, Offset0, Offset1,
+    PluginBase, ProcessData, ProcessMode, ProcessSetup, ResultErr, ResultOk, Stream,
+    SymbolicSampleSize, Unknown, UID,
 };
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::{Arc, Mutex};
+use vst3_com::offset::Offset;
 
 pub enum IoMode {
     Simple,
@@ -300,11 +301,11 @@ impl VST3Component {
     fn allocate(inner: Mutex<Box<dyn PluginBase>>) -> Box<VST3Component> {
         let icomponent_vtable = <dyn IComponent as ::vst3_com::ProductionComInterface<
             VST3Component,
-        >>::vtable::<vst3_com::Offset0>();
+        >>::vtable::<Offset0>();
         let __icomponentvptr = Box::into_raw(Box::new(icomponent_vtable));
         let iaudioprocessor_vtable = <dyn IAudioProcessor as ::vst3_com::ProductionComInterface<
             VST3Component,
-        >>::vtable::<vst3_com::Offset1>();
+        >>::vtable::<Offset1>();
         let __iaudioprocessorvptr = Box::into_raw(Box::new(iaudioprocessor_vtable));
         let out = VST3Component {
             __icomponentvptr,

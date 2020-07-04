@@ -15,7 +15,8 @@ use crate::ResultErr::{InternalError, InvalidArgument, NotImplemented, ResultFal
 use crate::ResultOk::ResOk;
 use crate::{
     strcpy, wstrcpy, AudioProcessor, ClassInfo, Component, EditController, HostApplication,
-    PluginBase, ResultErr, ResultOk, Unknown, VST3Component, VST3EditController, UID,
+    Offset0, Offset1, Offset2, PluginBase, ResultErr, ResultOk, Unknown, VST3Component,
+    VST3EditController, UID,
 };
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -104,15 +105,15 @@ impl VST3PluginFactory {
     fn allocate(inner: Mutex<Box<dyn PluginFactory>>) -> Box<VST3PluginFactory> {
         let ipluginfactory_vtable = <dyn IPluginFactory as ::vst3_com::ProductionComInterface<
             VST3PluginFactory,
-        >>::vtable::<vst3_com::Offset0>();
+        >>::vtable::<Offset0>();
         let __ipluginfactoryvptr = Box::into_raw(Box::new(ipluginfactory_vtable));
         let ipluginfactory2_vtable = <dyn IPluginFactory2 as ::vst3_com::ProductionComInterface<
             VST3PluginFactory,
-        >>::vtable::<vst3_com::Offset1>();
+        >>::vtable::<Offset1>();
         let __ipluginfactory2vptr = Box::into_raw(Box::new(ipluginfactory2_vtable));
         let ipluginfactory3_vtable = <dyn IPluginFactory3 as ::vst3_com::ProductionComInterface<
             VST3PluginFactory,
-        >>::vtable::<vst3_com::Offset2>();
+        >>::vtable::<Offset2>();
         let __ipluginfactory3vptr = Box::into_raw(Box::new(ipluginfactory3_vtable));
         let out = VST3PluginFactory {
             __ipluginfactoryvptr,

@@ -16,8 +16,8 @@ use crate::unknown::{ResultErr, Unknown};
 use crate::ResultErr::{InternalError, InvalidArgument, NotImplemented};
 use crate::ResultOk::ResOk;
 use crate::{
-    wstrcpy, ClassInfo, ClassInfoBuilder, HostApplication, ParameterInfo, PluginBase, ResultOk,
-    Stream, UnitInfo, UID,
+    wstrcpy, ClassInfo, ClassInfoBuilder, HostApplication, Offset0, Offset1, Offset2,
+    ParameterInfo, PluginBase, ResultOk, Stream, UnitInfo, UID,
 };
 
 pub struct ComponentHandler {
@@ -182,15 +182,15 @@ impl VST3EditController {
     fn allocate(inner: Mutex<Box<dyn PluginBase>>) -> Box<VST3EditController> {
         let ieditcontroller_vtable = <dyn IEditController as ::vst3_com::ProductionComInterface<
             VST3EditController,
-        >>::vtable::<vst3_com::Offset0>();
+        >>::vtable::<Offset0>();
         let __ieditcontrollervptr = Box::into_raw(Box::new(ieditcontroller_vtable));
         let iunitinfo_vtable = <dyn IUnitInfo as ::vst3_com::ProductionComInterface<
             VST3EditController,
-        >>::vtable::<vst3_com::Offset1>();
+        >>::vtable::<Offset1>();
         let __iunitinfovptr = Box::into_raw(Box::new(iunitinfo_vtable));
         let imidimapping_vtable = <dyn IMidiMapping as ::vst3_com::ProductionComInterface<
             VST3EditController,
-        >>::vtable::<vst3_com::Offset2>();
+        >>::vtable::<Offset2>();
         let __imidimappingvptr = Box::into_raw(Box::new(imidimapping_vtable));
         let out = VST3EditController {
             __ieditcontrollervptr,

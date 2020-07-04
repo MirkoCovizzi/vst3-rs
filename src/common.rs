@@ -8,6 +8,7 @@ use vst3_com::sys::GUID;
 use vst3_sys::vst::{kFx, kVstAudioEffectClass, kVstComponentControllerClass};
 
 use crate::{AudioProcessor, Component, EditController, HostApplication, ResultErr, ResultOk};
+use vst3_com::offset::Offset;
 
 pub(crate) unsafe fn register_panic_msg(msg: &str) {
     #[cfg(debug_assertions)]
@@ -301,6 +302,22 @@ impl UID {
         }
         self
     }
+}
+
+pub(crate) struct Offset0;
+pub(crate) struct Offset1;
+pub(crate) struct Offset2;
+
+impl Offset for Offset0 {
+    const VALUE: usize = 0;
+}
+
+impl Offset for Offset1 {
+    const VALUE: usize = 1;
+}
+
+impl Offset for Offset2 {
+    const VALUE: usize = 2;
 }
 
 #[cfg(test)]
