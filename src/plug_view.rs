@@ -18,6 +18,7 @@ use log::Log;
 use std::any::Any;
 use std::ffi::CString;
 use vst3_com::offset::Offset;
+use baseview::Parent::WithParent;
 
 pub trait PlugView {
     fn new() -> Box<Self>
@@ -31,7 +32,7 @@ pub trait PlugView {
     fn attached(&mut self, parent: *mut c_void, platform_type: String) -> ResultErr;
     fn removed(&mut self) -> ResultErr;
     fn on_wheel(&self, distance: f32) -> ResultErr;
-    fn on_key_down(&self, key: char, key_code: i16, modifiers: i16) -> ResultErr;
+    fn on_key_down(&self, key: i16, key_code: i16, modifiers: i16) -> ResultErr;
     fn on_key_up(&self, key: char, key_code: i16, modifiers: i16) -> ResultErr;
     fn get_size(&self) -> Result<ViewRect, ResultErr>;
     fn on_size(&self) -> Result<ViewRect, ResultErr>;
@@ -67,7 +68,7 @@ impl PlugView for DummyPlugView {
         unimplemented!()
     }
 
-    fn on_key_down(&self, key: char, key_code: i16, modifiers: i16) -> ResultErr {
+    fn on_key_down(&self, key: i16, key_code: i16, modifiers: i16) -> ResultErr {
         unimplemented!()
     }
 
@@ -109,11 +110,20 @@ impl Default for WebPlugView {
 }
 
 impl PlugView for WebPlugView {
-    fn is_platform_type_supported(&self, platform_type: String) -> ResultErr {
+    fn is_platform_type_supported(&self, _platform_type: String) -> ResultErr {
         unimplemented!()
     }
 
-    fn attached(&mut self, parent: *mut c_void, platform_type: String) -> ResultErr {
+    fn attached(&mut self, parent: *mut c_void, _platform_type: String) -> ResultErr {
+        let window_open_options = baseview::WindowOpenOptions {
+            title: "baseview",
+            width: 600,
+            height: 600,
+            parent: WithParent(parent)
+        };
+
+        baseview::Window::open(window_open_options);
+
         ResultFalse
     }
 
@@ -125,8 +135,9 @@ impl PlugView for WebPlugView {
         unimplemented!()
     }
 
-    fn on_key_down(&self, key: char, key_code: i16, modifiers: i16) -> ResultErr {
-        unimplemented!()
+    fn on_key_down(&self, key: i16, key_code: i16, modifiers: i16) -> ResultErr {
+        log::info!("{}, {}, {}", key, key_code, modifiers);
+        ResultFalse
     }
 
     fn on_key_up(&self, key: char, key_code: i16, modifiers: i16) -> ResultErr {
@@ -251,6 +262,9 @@ impl<'a> IPlugView for VST3PlugView<'a> {
     }
 
     unsafe fn attached(&self, parent: *mut c_void, _type_: *const i8) -> i32 {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.as_mut().unwrap().attached(parent, "".to_string());
+        }
         vst3_sys::base::kResultOk
     }
 
@@ -263,6 +277,9 @@ impl<'a> IPlugView for VST3PlugView<'a> {
     }
 
     unsafe fn on_key_down(&self, key: i16, key_code: i16, modifiers: i16) -> i32 {
+        if let Ok(inner) = self.inner.lock() {
+            inner.as_ref().unwrap().on_key_down(key, key_code, modifiers);
+        }
         vst3_sys::base::kResultOk
     }
 
