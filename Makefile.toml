@@ -1,0 +1,11 @@
+[tasks.again]
+workspace = false
+script = []
+
+[tasks.again.windows]
+workspace = false
+script_runner = "@shell"
+script = [
+    "cargo build --example again",
+    "cp target/debug/examples/again.dll target/debug/examples/again.vst3"
+]

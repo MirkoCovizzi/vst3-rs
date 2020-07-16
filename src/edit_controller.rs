@@ -90,7 +90,7 @@ pub trait EditController: PluginBase {
     fn get_param_normalized(&self, id: usize) -> Result<f64, ResultErr>;
     fn set_param_normalized(&mut self, id: usize, value: f64) -> Result<ResultOk, ResultErr>;
     fn set_component_handler(&self, handler: ComponentHandler) -> Result<ResultOk, ResultErr>;
-    fn create_view(&mut self) -> Result<&mut Box<dyn PlugView>, ResultErr>;
+    fn create_view(&mut self) -> Option<&mut Box<dyn PlugView>>;
 }
 
 struct DummyEditController {}
@@ -164,7 +164,7 @@ impl EditController for DummyEditController {
         unimplemented!()
     }
 
-    fn create_view(&mut self) -> Result<&mut Box<dyn PlugView>, ResultErr> {
+    fn create_view(&mut self) -> Option<&mut Box<dyn PlugView>> {
         unimplemented!()
     }
 }
@@ -499,7 +499,8 @@ impl IEditController for VST3EditController {
         NotImplemented.into()
     }
 
-    unsafe fn create_view(&self, name: *const i8) -> *mut c_void {
+    unsafe fn create_view(&self, _: *const i8) -> *mut c_void {
+        /*
         if let Some(edit_controller) = self.get_plugin_base().lock().unwrap().as_edit_controller() {
             if name.is_null() {
                 return null_mut();
@@ -509,14 +510,15 @@ impl IEditController for VST3EditController {
             // types.
             // let name = CStr::from_ptr(name).to_string_lossy().to_string();
             return match edit_controller.create_view() {
-                Ok(plug_view) => {
+                Some(plug_view) => {
                     let mut view = VST3PlugView::new();
                     view.set_plug_view(plug_view);
                     Box::into_raw(view) as *mut c_void
                 }
-                Err(r) => null_mut(),
+                None => null_mut(),
             };
         }
+        */
         null_mut()
     }
 }

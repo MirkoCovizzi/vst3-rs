@@ -1,5 +1,4 @@
 mod audio_processor;
-mod basic_plugin;
 mod bus;
 mod common;
 mod component;
@@ -19,7 +18,6 @@ mod unit_info;
 mod unknown;
 
 pub use audio_processor::*;
-pub use basic_plugin::*;
 pub use bus::*;
 pub use common::*;
 pub use component::*;

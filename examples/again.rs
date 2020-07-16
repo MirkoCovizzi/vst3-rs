@@ -101,7 +101,6 @@ struct AGainEditController {
     units: Vec<Unit>,
     parameters: ParameterContainer,
     component_handler: Option<ComponentHandler>,
-    view: Box<dyn PlugView>,
 }
 
 impl AGainEditController {
@@ -120,7 +119,6 @@ impl Default for AGainEditController {
             units: vec![],
             parameters: ParameterContainer::new(),
             component_handler: None,
-            view: WebPlugView::new(),
         }
     }
 }
@@ -267,8 +265,8 @@ impl EditController for AGainEditController {
         Ok(ResOk)
     }
 
-    fn create_view(&mut self) -> Result<&mut Box<dyn PlugView>, ResultErr> {
-        Ok(&mut self.view)
+    fn create_view(&mut self) -> Option<&mut Box<dyn PlugView>> {
+        None
     }
 }
 
@@ -537,7 +535,7 @@ impl AudioProcessor for AGainComponent {
         true
     }
 
-    fn process(&mut self, data: &mut ProcessData<f32>) -> bool {
+    fn process(&mut self, data: &mut ProcessData<f32>) {
         if let Some(param_changes) = data.get_input_param_changes() {
             let num_params_changed = param_changes.get_parameter_count();
             for i in 0..num_params_changed {
@@ -561,7 +559,7 @@ impl AudioProcessor for AGainComponent {
         }
 
         if data.num_inputs() == 0 || data.num_outputs() == 0 {
-            return true;
+            return;
         }
 
         let mut temp = 0.0;
@@ -586,13 +584,9 @@ impl AudioProcessor for AGainComponent {
                 param_queue.add_point(0, temp as f64, &mut index_2);
             }
         }
-
-        true
     }
 
-    fn process_f64(&mut self, _data: &mut ProcessData<f64>) -> bool {
-        false
-    }
+    fn process_f64(&mut self, _data: &mut ProcessData<f64>) {}
 
     fn get_tail_samples(&self) -> usize {
         0

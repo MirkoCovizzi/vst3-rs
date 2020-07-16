@@ -268,8 +268,8 @@ pub trait AudioProcessor: Component {
     fn get_latency_samples(&self) -> usize;
     fn setup_processing(&mut self, setup: &ProcessSetup) -> bool;
     fn set_processing(&mut self, state: bool) -> bool;
-    fn process(&mut self, data: &mut ProcessData<f32>) -> bool;
-    fn process_f64(&mut self, data: &mut ProcessData<f64>) -> bool;
+    fn process(&mut self, data: &mut ProcessData<f32>);
+    fn process_f64(&mut self, data: &mut ProcessData<f64>);
     fn get_tail_samples(&self) -> usize;
 }
 
@@ -476,11 +476,9 @@ impl IAudioProcessor for VST3Component {
                                 (*data).output_events as *mut c_void,
                             );
 
-                            if audio_processor.process(&mut process_data) {
-                                *ret.lock().unwrap() = ResOk.into()
-                            } else {
-                                *ret.lock().unwrap() = ResultFalse.into()
-                            }
+                            audio_processor.process(&mut process_data);
+
+                            *ret.lock().unwrap() = ResOk.into();
                         }
                         SymbolicSampleSize::Sample64 => {
                             let mut process_data = ProcessData::<f64>::from_raw(
@@ -496,11 +494,9 @@ impl IAudioProcessor for VST3Component {
                                 (*data).output_events as *mut c_void,
                             );
 
-                            if audio_processor.process_f64(&mut process_data) {
-                                *ret.lock().unwrap() = ResOk.into()
-                            } else {
-                                *ret.lock().unwrap() = ResultFalse.into()
-                            }
+                            audio_processor.process_f64(&mut process_data);
+
+                            *ret.lock().unwrap() = ResOk.into();
                         }
                     };
                 }

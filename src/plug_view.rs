@@ -14,11 +14,13 @@ use core::panic::PanicInfo;
 use crate::ResultErr::ResultFalse;
 use crate::ResultOk;
 use crate::ResultOk::ResOk;
+use baseview::Parent::WithParent;
+use baseview::Window;
 use log::Log;
 use std::any::Any;
 use std::ffi::CString;
 use vst3_com::offset::Offset;
-use baseview::Parent::WithParent;
+use winapi::um::winuser::{GetWindowLongPtrA, SetWindowLongPtrA, GWLP_USERDATA};
 
 pub trait PlugView {
     fn new() -> Box<Self>
@@ -101,11 +103,13 @@ impl PlugView for DummyPlugView {
     }
 }
 
-pub struct WebPlugView {}
+pub struct WebPlugView {
+    window: Option<Window>,
+}
 
 impl Default for WebPlugView {
     fn default() -> Self {
-        Self {}
+        Self { window: None }
     }
 }
 
@@ -119,15 +123,20 @@ impl PlugView for WebPlugView {
             title: "baseview",
             width: 600,
             height: 600,
-            parent: WithParent(parent)
+            parent: WithParent(parent),
         };
 
-        baseview::Window::open(window_open_options);
+        let mut window = baseview::Window::open(window_open_options);
+        self.window = Some(window);
+        self.window.as_mut().unwrap().run();
 
         ResultFalse
     }
 
     fn removed(&mut self) -> ResultErr {
+        self.window.as_mut().unwrap().close();
+        self.window = None;
+
         ResultFalse
     }
 
@@ -278,7 +287,10 @@ impl<'a> IPlugView for VST3PlugView<'a> {
 
     unsafe fn on_key_down(&self, key: i16, key_code: i16, modifiers: i16) -> i32 {
         if let Ok(inner) = self.inner.lock() {
-            inner.as_ref().unwrap().on_key_down(key, key_code, modifiers);
+            inner
+                .as_ref()
+                .unwrap()
+                .on_key_down(key, key_code, modifiers);
         }
         vst3_sys::base::kResultOk
     }
