@@ -5,7 +5,7 @@ use crate::ResultErr::InvalidArgument;
 use crate::{wstrcpy, ResultErr, ROOT_UNIT_ID};
 
 pub struct ParameterInfo {
-    pub id: i32,
+    pub id: u32,
     pub title: String,
     pub short_title: Option<String>,
     pub units: Option<String>,
@@ -109,7 +109,7 @@ impl ParameterInfoBuilder {
 
     pub fn build(self) -> ParameterInfo {
         let mut info = ParameterInfo {
-            id: self.id as i32,
+            id: self.id as u32,
             title: self.title,
             short_title: self.short_title,
             units: self.units,
@@ -126,8 +126,8 @@ impl ParameterInfoBuilder {
 pub trait Parameter {
     fn get_info(&self) -> &ParameterInfo;
     fn get_info_mut(&mut self) -> &mut ParameterInfo;
-    fn set_unit_id(&mut self, id: i32);
-    fn get_unit_id(&self) -> i32;
+    fn set_unit_id(&mut self, id: u32);
+    fn get_unit_id(&self) -> u32;
     fn set_normalized(&mut self, v: f64);
     fn get_normalized(&self) -> f64;
     fn set_precision(&mut self, val: usize);
@@ -186,11 +186,11 @@ impl Parameter for BaseParameter {
         &mut self.info
     }
 
-    fn set_unit_id(&mut self, id: i32) {
+    fn set_unit_id(&mut self, id: u32) {
         self.info.id = id;
     }
 
-    fn get_unit_id(&self) -> i32 {
+    fn get_unit_id(&self) -> u32 {
         self.info.id
     }
 

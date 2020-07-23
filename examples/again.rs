@@ -50,11 +50,11 @@ impl Parameter for GainParameter {
         self.inner.get_info_mut()
     }
 
-    fn set_unit_id(&mut self, id: i32) {
+    fn set_unit_id(&mut self, id: u32) {
         self.inner.set_unit_id(id)
     }
 
-    fn get_unit_id(&self) -> i32 {
+    fn get_unit_id(&self) -> u32 {
         self.inner.get_unit_id()
     }
 
